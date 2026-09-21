@@ -1,0 +1,21 @@
+@import './theme.css';
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--color-background); color: var(--color-text); }
+
+.page { min-height: 100vh; display: grid; place-items: center; padding: var(--space-xl); }
+
+.card {
+  width: min(420px, 100%);
+  padding: var(--space-xxl);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-raised);
+}
+
+h1 { margin: 0 0 var(--space-xs); color: var(--color-primary); font-size: 2rem; letter-spacing: -0.5px; }
+.muted { margin: 0 0 var(--space-xl); color: var(--color-text-secondary); }
+.status { display: flex; justify-content: space-between; font-weight: 600; }
+.label { color: var(--color-text-secondary); font-weight: 500; }
+.good { color: var(--color-success); }
+.bad { color: var(--color-danger); }
