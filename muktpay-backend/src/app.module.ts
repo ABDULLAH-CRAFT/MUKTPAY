@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { typeOrmConfig } from './config/database.config';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
+import { SplitModule } from './split/split.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -19,7 +20,7 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     AuthModule,
     HealthModule,
-    // Phase 6: SplitModule
+    SplitModule,
     // Phase 8: OrdersModule, PaymentsModule
     // Phase 9: GroupsModule
   ],

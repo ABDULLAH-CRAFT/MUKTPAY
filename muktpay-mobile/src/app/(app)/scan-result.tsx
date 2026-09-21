@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AmountDisplay, MuktButton, MuktCard, MuktHeader, MuktInput } from '@/components';
+import { SplitPreviewSection } from '@/features/split/SplitPreviewSection';
 import { useReturnFromUpi } from '@/hooks/useReturnFromUpi';
 import { buildUpiLink, MAX_UPI_AMOUNT_PAISE, readUpiPayment } from '@/services/upi';
 import { launchUpiPayment } from '@/services/upi/upiLauncher';
@@ -128,14 +129,16 @@ export default function ScanResultScreen() {
           />
         )}
 
+        {ready && amountPaise !== null && <SplitPreviewSection totalPaise={amountPaise} />}
+
         <MuktCard variant="inset" padding="md">
           <Text style={text('caption', colors.textSecondary)}>
             Before paying, check that the name and UPI ID above match the shop you are paying.
           </Text>
         </MuktCard>
 
-        {/* Phase 6 (split engine) and Phase 7 (checkout) hook in here. */}
-        <MuktButton title="Split & pay: coming next" disabled onPress={() => {}} />
+        {/* Phase 7 (checkout) turns this into the real "Start payment". */}
+        <MuktButton title="Start payment: coming next" disabled onPress={() => {}} />
 
         {__DEV__ && (
           <MuktCard variant="inset">

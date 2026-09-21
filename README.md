@@ -48,11 +48,14 @@ Phone and computer must be on the **same Wi-Fi**. Allow Node.js through the Wind
 - Conventions: UUID primary keys · `timestamptz` timestamps · `snake_case` columns · money as
   integer paise · rows are revoked/flagged, not deleted.
 
-## Backend tests
+## Tests
 
 ```powershell
 cd muktpay-backend
 npm run test:e2e            # needs the database running
+
+cd muktpay-mobile
+npm test                    # UPI parser/validator, money formatting (no phone needed)
 ```
 
 ## Auth API (all under /api)
@@ -65,6 +68,14 @@ npm run test:e2e            # needs the database running
 | POST | `/auth/logout` | public | body: `{ refreshToken }` |
 | POST | `/auth/logout-all` | Bearer | revokes every session |
 | GET | `/users/me` | Bearer | current profile |
+| POST | `/split/preview` | Bearer | body `{ totalPaise, strategy?, maxTranchePaise? }` → payment plan (creates nothing) |
 | GET | `/health` | public | |
 
 Every route requires a Bearer token unless marked `@Public()`.
+
+## Split rules (backend/src/split)
+
+Pure, deterministic, integer-paise maths: no randomness, no floats. Defaults (override in `.env`):
+each payment ≤ ₹1,999 · each payment ≥ ₹1 (a tiny leftover is topped up from the previous payment) ·
+at most 20 payments per order. Strategies: `greedy` (₹6,800 → 1,999 · 1,999 · 1,999 · 803) and
+`balanced` (₹6,800 → 1,700 × 4). Callers may lower the cap but never raise it.
