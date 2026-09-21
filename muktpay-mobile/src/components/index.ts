@@ -6,3 +6,4 @@ export { MuktInput } from './MuktInput';
 export { SplitCard } from './SplitCard';
 export { StatusBadge, type PaymentStatus } from './StatusBadge';
 export { TransactionCard } from './TransactionCard';
+export { UpiQrCode } from './UpiQrCode';

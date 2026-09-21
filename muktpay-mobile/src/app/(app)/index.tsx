@@ -1,48 +1,29 @@
-import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
-import { MuktButton, MuktCard, MuktHeader } from '@/components';
-import { useAuth } from '@/features/auth/AuthProvider';
-import { colors, layout, spacing, text } from '@/theme/theme';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { CustomerHome } from '@/features/home/CustomerHome';
+import { MerchantHome } from '@/features/merchant/MerchantHome';
+import { ChooseRoleScreen } from '@/features/role/ChooseRoleScreen';
+import { useRole } from '@/features/role/RoleProvider';
+import { colors } from '@/theme/theme';
 
-// Temporary home. Phase 10 replaces it with the real dashboard.
+/**
+ * The home screen is a switch, not a screen: picker → customer home → merchant home.
+ * Keeping it one route means switching sides is instant and leaves no back-stack to escape into.
+ */
 export default function HomeScreen() {
-  const router = useRouter();
-  const { user, logout } = useAuth();
-  const [loggingOut, setLoggingOut] = useState(false);
+  const { status, role } = useRole();
 
-  const firstName = user?.name.split(' ')[0] ?? '';
+  if (status === 'loading') {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
 
-  return (
-    <View style={styles.page}>
-      <MuktHeader title={`Hi, ${firstName}`} subtitle={user?.email} />
-
-      <ScrollView contentContainerStyle={styles.content}>
-        <MuktCard>
-          <Text style={text('h3')}>You're signed in ✓</Text>
-          <Text style={[text('body', colors.textSecondary), styles.mt]}>
-            Your session is stored securely on this device and renews itself automatically.
-          </Text>
-        </MuktCard>
-
-        <MuktButton title="Scan & Pay" onPress={() => router.push('/scan')} />
-        <MuktButton title="Design system preview" variant="secondary" onPress={() => router.push('/design')} />
-        <MuktButton
-          title="Log out"
-          variant="ghost"
-          loading={loggingOut}
-          onPress={async () => {
-            setLoggingOut(true);
-            await logout();
-          }}
-        />
-      </ScrollView>
-    </View>
-  );
+  if (role === null) return <ChooseRoleScreen />;
+  return role === 'merchant' ? <MerchantHome /> : <CustomerHome />;
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.background },
-  content: { paddingHorizontal: layout.screenPadding, paddingBottom: spacing.xxxl, gap: spacing.xl },
-  mt: { marginTop: spacing.sm },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
 });
