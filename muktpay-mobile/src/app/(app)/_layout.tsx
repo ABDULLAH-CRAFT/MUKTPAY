@@ -1,22 +1,21 @@
 import { Stack } from 'expo-router';
-import { ActiveBillProvider } from '@/features/merchant/ActiveBillProvider';
 import { MerchantProvider } from '@/features/merchant/MerchantProvider';
 import { RoleProvider } from '@/features/role/RoleProvider';
 import { colors } from '@/theme/theme';
 
 /**
- * Everything in here is signed-in. Role, shop profile and the bill in progress only mean
- * something once we know who the person is, so all three providers are mounted here rather
- * than at the root. They are cheap for a customer: two keychain reads that come back empty
- * and one null.
+ * Everything in here is signed-in. Role and shop profile only mean something once we know who
+ * the person is, so both providers are mounted here rather than at the root.
+ *
+ * There used to be a third provider here (ActiveBillProvider) holding the in-progress bill in
+ * memory. Bills now live on the server and are addressed by `ref` through route params (see
+ * merchant/bill.tsx and merchant/useBills.ts), so there's no in-progress bill left to hold here.
  */
 export default function AppGroupLayout() {
   return (
     <RoleProvider>
       <MerchantProvider>
-        <ActiveBillProvider>
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }} />
-        </ActiveBillProvider>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }} />
       </MerchantProvider>
     </RoleProvider>
   );

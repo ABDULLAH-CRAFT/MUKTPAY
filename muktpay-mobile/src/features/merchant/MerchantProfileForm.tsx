@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { MuktButton, MuktCard, MuktInput } from '@/components';
+import { getApiErrorMessage } from '@/lib/apiError';
 import { colors, spacing, text } from '@/theme/theme';
-import type { MerchantProfile } from '@/types/merchant';
 import { useMerchant } from './MerchantProvider';
 import { checkVpa, normalizeShopName, SHOP_NAME_MAX, validateShopName } from './validateMerchantProfile';
 
@@ -20,6 +20,7 @@ export function MerchantProfileForm({ submitLabel, onSaved, onCancel }: Merchant
   const [vpa, setVpa] = useState(profile?.vpa ?? '');
   const [touched, setTouched] = useState<{ shopName: boolean; vpa: boolean }>({ shopName: false, vpa: false });
   const [saving, setSaving] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const nameError = validateShopName(shopName);
   const vpaCheck = useMemo(() => checkVpa(vpa), [vpa]);
@@ -30,16 +31,19 @@ export function MerchantProfileForm({ submitLabel, onSaved, onCancel }: Merchant
     if (!ready || saving) return;
 
     setSaving(true);
-    const next: MerchantProfile = {
-      shopName: normalizeShopName(shopName),
-      vpa: vpaCheck.vpa,
-      verification: 'format',
-      issuerLabel: vpaCheck.issuerLabel,
-      savedAt: new Date().toISOString(),
-    };
-    await saveProfile(next);
-    setSaving(false);
-    onSaved();
+    setSubmitError(null);
+    try {
+      await saveProfile({
+        shopName: normalizeShopName(shopName),
+        vpa: vpaCheck.vpa,
+        issuerLabel: vpaCheck.issuerLabel,
+      });
+      onSaved();
+    } catch (error) {
+      setSubmitError(getApiErrorMessage(error));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -94,6 +98,14 @@ export function MerchantProfileForm({ submitLabel, onSaved, onCancel }: Merchant
           here sends your customers&apos; money to a stranger.
         </Text>
       </MuktCard>
+
+      {submitError ? (
+        <MuktCard variant="flat" padding="md">
+          <Text accessibilityLiveRegion="polite" style={text('bodyStrong', colors.danger)}>
+            {submitError}
+          </Text>
+        </MuktCard>
+      ) : null}
 
       <MuktButton title={submitLabel} loading={saving} disabled={!ready} onPress={() => void submit()} />
       {onCancel ? <MuktButton title="Cancel" variant="ghost" onPress={onCancel} /> : null}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { nextPendingChunk, paidPaise, isSettled } from '@/types/bill';
-import { buildMerchantUpiUrl, chunkNote, createBill, makeBillRef, setChunkStatus } from './billFactory';
+import { buildMerchantUpiUrl, cancelBill, chunkNote, closeBill, createBill, makeBillRef, setChunkStatus } from './billFactory';
 import { DEFAULT_SPLIT_RULES, planSplit } from './splitEngine';
 
 const plan = (totalPaise: number) => {
@@ -75,11 +75,43 @@ describe('createBill', () => {
     expect(b.capPaise).toBe(1999_00);
   });
 
+  it('opens in the "open" state with no end time', () => {
+    const b = bill();
+    expect(b.state).toBe('open');
+    expect(b.endedAt).toBeNull();
+  });
+
   it('chunk amounts add up to the total', () => {
     for (const total of [1500_00, 4500_00, 6800_00, 12345_67]) {
       const b = bill(total);
       expect(b.chunks.reduce((sum, c) => sum + c.amountPaise, 0)).toBe(total);
     }
+  });
+});
+
+describe('closing and cancelling', () => {
+  it('closeBill marks the bill closed and stamps the time', () => {
+    const closed = closeBill(bill(), NOW);
+    expect(closed.state).toBe('closed');
+    expect(closed.endedAt).toBe(NOW.toISOString());
+  });
+
+  it('cancelBill marks the bill cancelled and stamps the time', () => {
+    const cancelled = cancelBill(bill(), NOW);
+    expect(cancelled.state).toBe('cancelled');
+    expect(cancelled.endedAt).toBe(NOW.toISOString());
+  });
+
+  it('does not touch the chunks', () => {
+    const marked = setChunkStatus(bill(), 1, 'paid', NOW);
+    const closed = closeBill(marked, NOW);
+    expect(closed.chunks).toEqual(marked.chunks);
+  });
+
+  it('does not mutate the bill it was given', () => {
+    const original = bill();
+    closeBill(original, NOW);
+    expect(original.state).toBe('open');
   });
 });
 

@@ -91,6 +91,8 @@ export function createBill(
     capPaise,
     strategy: plan.strategy,
     chunks,
+    state: 'open',
+    endedAt: null,
   };
 }
 
@@ -104,4 +106,14 @@ export function setChunkStatus(bill: Bill, index: number, status: BillChunk['sta
         : chunk,
     ),
   };
+}
+
+/** The merchant tapped "Done" after every chunk was paid. Only meaningful on an open bill. */
+export function closeBill(bill: Bill, now: Date = new Date()): Bill {
+  return { ...bill, state: 'closed', endedAt: now.toISOString() };
+}
+
+/** The merchant abandoned the bill before it was fully paid. */
+export function cancelBill(bill: Bill, now: Date = new Date()): Bill {
+  return { ...bill, state: 'cancelled', endedAt: now.toISOString() };
 }

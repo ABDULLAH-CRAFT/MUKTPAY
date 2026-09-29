@@ -1,11 +1,13 @@
 import { useEffect } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AmountDisplay, MuktButton, MuktCard, MuktHeader, SplitCard, UpiQrCode } from '@/components';
-import { useActiveBill } from '@/features/merchant/ActiveBillProvider';
+import { useBill, useCancelBill, useSetChunkStatus } from '@/features/merchant/useBills';
+import { getApiErrorMessage } from '@/lib/apiError';
 import { colors, layout, spacing, text } from '@/theme/theme';
-import { isSettled, nextPendingChunk, paidPaise } from '@/types/bill';
+import { canCancelBill, isCancelled, isSettled, nextPendingChunk, paidPaise } from '@/types/bill';
 import { formatPaise } from '@/utils/money';
+import { BillActivity } from '@/features/merchant/BillActivity';
 
 /**
  * The counter screen: show one QR, wait for the customer to pay it, mark it, show the next.
@@ -13,28 +15,79 @@ import { formatPaise } from '@/utils/money';
  * Only one code is shown at a time on purpose. A customer looking at four QR codes will scan
  * whichever is nearest, pay one twice, or skip one — and with no payment callback (see below)
  * the merchant has no way to notice. One at a time makes the sequence self-evident.
+ *
+ * The bill lives on the server (identified by `ref`, passed as a route param), so leaving this
+ * screen loses nothing: it stays in history for the merchant to come back to.
  */
 export default function BillScreen() {
   const router = useRouter();
-  const { bill, markChunk, closeBill } = useActiveBill();
+  const { ref: refParam } = useLocalSearchParams<{ ref?: string | string[] }>();
+  const ref = Array.isArray(refParam) ? refParam[0] : refParam;
+
+  const { data: bill, isLoading, isError, error } = useBill(ref);
+  const setChunkStatus = useSetChunkStatus(ref ?? '');
+  const cancelBill = useCancelBill(ref ?? '');
 
   const goHome = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
-  // Landing here with no bill means a reload or a deep link. Nothing to show; go back.
+  // Landing here with no ref means a reload or a bad deep link. Nothing to show; go back.
   useEffect(() => {
-    if (!bill) router.replace('/');
-  }, [bill, router]);
+    if (!ref) router.replace('/');
+  }, [ref, router]);
 
-  if (!bill) return null;
+  if (!ref) return null;
+
+  if (isLoading) {
+    return (
+      <View style={styles.page}>
+        <MuktHeader title="Bill" onBack={goHome} />
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </View>
+    );
+  }
+
+  if (isError || !bill) {
+    return (
+      <View style={styles.page}>
+        <MuktHeader title="Bill" onBack={goHome} />
+        <View style={styles.body}>
+          <MuktCard variant="flat">
+            <Text style={text('bodyStrong', colors.danger)}>{getApiErrorMessage(error) || 'Bill not found'}</Text>
+          </MuktCard>
+          <MuktButton title="Back" onPress={goHome} />
+        </View>
+      </View>
+    );
+  }
 
   const collected = paidPaise(bill);
   const current = nextPendingChunk(bill);
   const settled = isSettled(bill);
+  const cancelled = isCancelled(bill);
+  const expired = bill.status === 'expired';
   const lastPaid = [...bill.chunks].reverse().find((c) => c.status === 'paid') ?? null;
+  const busy = setChunkStatus.isPending || cancelBill.isPending;
+  const actionError = setChunkStatus.isError ? setChunkStatus.error : cancelBill.isError ? cancelBill.error : null;
+
+  const confirmCancel = () =>
+    Alert.alert(
+      'Cancel this bill?',
+      "It will stop being tracked here. A QR code the customer already has will still work in their UPI app, so don't take payment against it.",
+      [
+        { text: 'Keep bill', style: 'cancel' },
+        { text: 'Cancel bill', style: 'destructive', onPress: () => cancelBill.mutate() },
+      ],
+    );
 
   return (
     <View style={styles.page}>
-      <MuktHeader title={formatPaise(bill.totalPaise)} subtitle={`Ref ${bill.ref}`} onBack={goHome} />
+      <MuktHeader
+        title={formatPaise(bill.totalPaise)}
+        subtitle={bill.note ? `Ref ${bill.ref} · ${bill.note}` : `Ref ${bill.ref}`}
+        onBack={goHome}
+      />
 
       <ScrollView contentContainerStyle={styles.body}>
         <MuktCard padding="md">
@@ -50,7 +103,16 @@ export default function BillScreen() {
           </View>
         </MuktCard>
 
-        {settled ? (
+        {cancelled ? (
+          <MuktCard>
+            <Text style={text('h2', colors.danger)}>Bill cancelled</Text>
+            <Text style={[text('body', colors.textSecondary), styles.mt]}>
+              This bill was called off
+              {bill.cancelledAt ? ` on ${new Date(bill.cancelledAt).toLocaleString()}` : ''}. It&apos;s kept here as a record
+              and can&apos;t be edited.
+            </Text>
+          </MuktCard>
+        ) : settled ? (
           <MuktCard>
             <Text style={text('h2', colors.success)}>All payments received ✓</Text>
             <Text style={[text('body', colors.textSecondary), styles.mt]}>
@@ -58,8 +120,19 @@ export default function BillScreen() {
               customer leaves — this app has no way to confirm the money actually arrived.
             </Text>
           </MuktCard>
+          
         ) : current ? (
           <View style={styles.current}>
+          <BillActivity billRef={bill.ref} />
+            {expired ? (
+              <MuktCard padding="md" variant="inset">
+                <Text style={text('label', colors.warning)}>EXPIRED</Text>
+                <Text style={[text('caption', colors.textSecondary), styles.mt]}>
+                  Nothing was marked paid within 24 hours. A QR the customer already has can still work, so only
+                  mark a payment as paid if you actually see the money.
+                </Text>
+              </MuktCard>
+            ) : null}
             <Text style={text('h3')}>
               Payment {current.index} of {bill.chunks.length}
             </Text>
@@ -68,16 +141,29 @@ export default function BillScreen() {
             <Text style={[text('caption', colors.textSecondary), styles.centered]}>
               Ask the customer to scan this in any UPI app. Mark it paid only once you see the money.
             </Text>
-            <MuktButton title="Mark as paid" onPress={() => markChunk(current.index, 'paid')} />
+            <MuktButton
+              title="Mark as paid"
+              loading={setChunkStatus.isPending}
+              disabled={busy}
+              onPress={() => setChunkStatus.mutate({ index: current.index, status: 'paid' })}
+            />
           </View>
         ) : null}
 
-        {lastPaid ? (
+        {lastPaid && !cancelled ? (
           <MuktButton
             title={`Undo payment ${lastPaid.index}`}
             variant="ghost"
-            onPress={() => markChunk(lastPaid.index, 'pending')}
+            loading={setChunkStatus.isPending}
+            disabled={busy}
+            onPress={() => setChunkStatus.mutate({ index: lastPaid.index, status: 'pending' })}
           />
+        ) : null}
+
+        {actionError ? (
+          <MuktCard variant="flat">
+            <Text style={text('bodyStrong', colors.danger)}>{getApiErrorMessage(actionError)}</Text>
+          </MuktCard>
         ) : null}
 
         <View style={styles.list}>
@@ -90,7 +176,7 @@ export default function BillScreen() {
               sublabel={`${bill.ref} ${chunk.index}/${bill.chunks.length}`}
               amountPaise={chunk.amountPaise}
               status={chunk.status}
-              highlighted={current?.index === chunk.index}
+              highlighted={!cancelled && current?.index === chunk.index}
             />
           ))}
         </View>
@@ -103,10 +189,21 @@ export default function BillScreen() {
           </Text>
         </MuktCard>
 
+        {canCancelBill(bill) ? (
+          <MuktButton
+            title="Cancel bill"
+            variant="ghost"
+            loading={cancelBill.isPending}
+            disabled={busy}
+            onPress={confirmCancel}
+          />
+        ) : null}
+
         <MuktButton
-          title={settled ? 'Done' : 'Cancel this bill'}
-          variant={settled ? 'primary' : 'ghost'}
-          onPress={closeBill} // clearing the bill makes the effect above send us home
+          title={settled || cancelled ? 'Done' : 'Leave for now'}
+          variant={settled || cancelled ? 'primary' : 'ghost'}
+          // The bill stays saved either way — nothing to lose by leaving. Resume it from history.
+          onPress={goHome}
         />
       </ScrollView>
     </View>
@@ -115,6 +212,7 @@ export default function BillScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   body: { paddingHorizontal: layout.screenPadding, paddingBottom: spacing.xxxl, gap: spacing.xl },
   progressHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.sm },
   progressRow: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm },

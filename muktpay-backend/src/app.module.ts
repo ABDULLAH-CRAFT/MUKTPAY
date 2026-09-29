@@ -4,9 +4,11 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
+import { BillsModule } from './bills/bill.module';
 import { typeOrmConfig } from './config/database.config';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
+import { MerchantModule } from './merchant/merchant.module';
 import { SplitModule } from './split/split.module';
 import { UsersModule } from './users/users.module';
 
@@ -21,7 +23,8 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     HealthModule,
     SplitModule,
-    // Phase 8: OrdersModule, PaymentsModule
+    MerchantModule,
+    BillsModule,
     // Phase 9: GroupsModule
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

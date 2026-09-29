@@ -1,11 +1,13 @@
 /**
  * Everything the app needs to raise a payment request in this merchant's name.
  *
- * `vpa` and `shopName` become the `pa` and `pn` fields of every QR code we generate,
- * so both are stored already sanitised and ready to put in a URL.
+ * This is now the server's record (GET/PUT/DELETE /merchant/profile) — one row per merchant
+ * account, not a per-device SecureStore cache — so the shop follows the merchant to any device
+ * they log into, and every bill built from it traces back to an account.
  */
 export interface MerchantProfile {
-  /** Shown to the customer inside their UPI app. Sanitised, 2–50 chars. */
+  id: string;
+  /** Shown to the customer inside their UPI app when they scan. */
   shopName: string;
   /** Lowercase UPI ID, e.g. "guptakirana@okhdfcbank". */
   vpa: string;
@@ -20,14 +22,13 @@ export interface MerchantProfile {
   verification: 'format' | 'penny' | 'provider';
   /** Informational label from the handle, e.g. "Google Pay · HDFC Bank". Null when unrecognised. */
   issuerLabel: string | null;
-  /** ISO timestamp of the last save. */
-  savedAt: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-/** The current schema version, so a future change can migrate instead of silently misreading. */
-export const MERCHANT_PROFILE_VERSION = 1;
-
-export interface StoredMerchantProfile {
-  version: number;
-  profile: MerchantProfile;
+/** What the form sends to PUT /merchant/profile. */
+export interface UpsertMerchantProfileInput {
+  shopName: string;
+  vpa: string;
+  issuerLabel: string | null;
 }
