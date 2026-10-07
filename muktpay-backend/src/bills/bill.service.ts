@@ -268,7 +268,7 @@ export class BillService {
   async cancel(merchantId: string, ref: string): Promise<Bill> {
     const bill = await this.findOwnedByRef(merchantId, ref);
     if (bill.status === 'cancelled') return bill;
-    if (bill.status === 'settled') throw new ConflictException("A fully paid bill can't be cancelled.");
+      throw new ConflictException('Some payments are already marked as paid. Undo them first, or leave the bill open.');
     if (bill.chunks.some((c) => c.status === 'paid')) {
       throw new ConflictException('Some payments are already marked as received. Undo them first, or leave the bill open.');
     }

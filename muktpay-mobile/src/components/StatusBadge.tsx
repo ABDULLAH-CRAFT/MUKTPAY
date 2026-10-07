@@ -5,8 +5,8 @@ export type PaymentStatus = 'pending' | 'processing' | 'paid' | 'failed' | 'canc
 
 const CONFIG: Record<PaymentStatus, { label: string; fg: string; bg: string }> = {
   pending: { label: 'Pending', fg: colors.warning, bg: colors.warningSoft },
-  processing: { label: 'Processing', fg: colors.info, bg: colors.infoSoft },
-  paid: { label: 'Paid', fg: colors.success, bg: colors.successSoft },
+  processing: { label: 'In progress', fg: colors.info, bg: colors.infoSoft },
+  paid: { label: 'Marked paid', fg: colors.success, bg: colors.successSoft },
   failed: { label: 'Failed', fg: colors.danger, bg: colors.dangerSoft },
   cancelled: { label: 'Cancelled', fg: colors.textSecondary, bg: colors.surface },
   expired: { label: 'Expired', fg: colors.textSecondary, bg: colors.surface },

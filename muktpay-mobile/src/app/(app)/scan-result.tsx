@@ -4,10 +4,22 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AmountDisplay, MuktButton, MuktCard, MuktHeader, MuktInput } from '@/components';
 import { SplitPreviewSection } from '@/features/split/SplitPreviewSection';
 import { useReturnFromUpi } from '@/hooks/useReturnFromUpi';
-import { buildUpiLink, MAX_UPI_AMOUNT_PAISE, readUpiPayment } from '@/services/upi';
+import { MAX_UPI_AMOUNT_PAISE, readUpiPayment } from '@/services/upi';
 import { launchUpiPayment } from '@/services/upi/upiLauncher';
 import { colors, layout, radius, shadows, spacing, text } from '@/theme/theme';
 import { formatPaise, parseRupeesToPaise } from '@/utils/money';
+
+/**
+ * Largest amount opened as ONE UPI payment. Mirrors the backend's default per-payment cap
+ * (SPLIT_MAX_TRANCHE_PAISE = 199900). Above it, the screen shows the split plan and one
+ * "Open UPI App" button per payment instead.
+ */
+const SINGLE_PAYMENT_LIMIT_PAISE = 199_900;
+
+const OPEN_FAILED_FALLBACK =
+  "We couldn't open your UPI app. Please scan the shop's QR code using your UPI app.";
+
+type LaunchState = 'idle' | 'opening' | 'waiting' | 'returned';
 
 export default function ScanResultScreen() {
   const router = useRouter();
@@ -18,9 +30,12 @@ export default function ScanResultScreen() {
   const result = useMemo(() => readUpiPayment(payload ?? ''), [payload]);
 
   const [typedAmount, setTypedAmount] = useState('');
-  // Developer test of the launcher (Phase 5). The real flow arrives with checkout in Phase 7.
-  const [launchState, setLaunchState] = useState<'idle' | 'waiting' | 'returned'>('idle');
+  const [launchState, setLaunchState] = useState<LaunchState>('idle');
   const [launchError, setLaunchError] = useState<string | null>(null);
+  /** Payment numbers the customer opened in their UPI app. "Opened" is not "paid". */
+  const [openedParts, setOpenedParts] = useState<number[]>([]);
+
+  // Linking only tells us the user came back, never whether a payment happened.
   useReturnFromUpi(launchState === 'waiting', () => setLaunchState('returned'));
 
   if (!result.ok) {
@@ -48,30 +63,42 @@ export default function ScanResultScreen() {
   const amountError =
     amountFromQr === null && typedAmount
       ? typedPaise === null || typedPaise <= 0
-        ? 'Enter a valid amount, e.g. 1999 or 1999.50'
+        ? 'Enter a valid amount greater than ₹0, e.g. 1999 or 1999.50'
         : typedPaise > MAX_UPI_AMOUNT_PAISE
           ? `The most UPI allows is ${formatPaise(MAX_UPI_AMOUNT_PAISE)}`
           : undefined
       : undefined;
 
   const ready = amountPaise !== null && amountPaise > 0 && !amountError;
+  const needsSplit = ready && amountPaise !== null && amountPaise > SINGLE_PAYMENT_LIMIT_PAISE;
+  const launching = launchState === 'opening' || launchState === 'waiting';
 
-  // What we would open, for the developer panel (null until an amount is known).
-  const previewUrl = (() => {
-    if (!ready || amountPaise === null) return null;
-    try {
-      return buildUpiLink(payment, { amountPaise }).url;
-    } catch {
-      return null;
-    }
-  })();
-
-  const openUpiApp = async () => {
-    if (!ready || amountPaise === null) return;
+  /** Hands the payment to the customer's UPI app. Never marks anything as paid. */
+  const openUpiApp = async (amountToPay: number, part?: number) => {
+    if (launching) return; // double-tap guard
     setLaunchError(null);
-    const outcome = await launchUpiPayment(payment, { amountPaise });
-    if (outcome.ok) setLaunchState('waiting');
-    else setLaunchError(outcome.message);
+    setLaunchState('opening');
+
+    try {
+      const outcome = await launchUpiPayment(payment, { amountPaise: amountToPay });
+      if (outcome.ok) {
+        if (part !== undefined) setOpenedParts((prev) => (prev.includes(part) ? prev : [...prev, part]));
+        setLaunchState('waiting');
+      } else {
+        setLaunchState('idle');
+        setLaunchError(outcome.message);
+      }
+    } catch {
+      setLaunchState('idle');
+      setLaunchError(OPEN_FAILED_FALLBACK);
+    }
+  };
+
+  const onAmountChange = (value: string) => {
+    setTypedAmount(value);
+    setOpenedParts([]); // the old "opened" markers belonged to a different amount
+    setLaunchError(null);
+    if (launchState === 'returned') setLaunchState('idle');
   };
 
   return (
@@ -120,7 +147,7 @@ export default function ScanResultScreen() {
           <MuktInput
             label="Amount to pay"
             value={typedAmount}
-            onChangeText={setTypedAmount}
+            onChangeText={onAmountChange}
             keyboardType="decimal-pad"
             placeholder="0"
             left={<Text style={text('bodyStrong', colors.textSecondary)}>₹</Text>}
@@ -129,65 +156,76 @@ export default function ScanResultScreen() {
           />
         )}
 
-        {ready && amountPaise !== null && <SplitPreviewSection totalPaise={amountPaise} />}
+        {ready && amountPaise !== null && (
+          <SplitPreviewSection
+            totalPaise={amountPaise}
+            payEachPart={needsSplit}
+            onOpenPayment={(partAmount, index) => void openUpiApp(partAmount, index)}
+            openedParts={openedParts}
+            busy={launching}
+          />
+        )}
 
         <MuktCard variant="inset" padding="md">
           <Text style={text('caption', colors.textSecondary)}>
-            Before paying, check that the name and UPI ID above match the shop you are paying.
+            Check that the name and UPI ID above match the shop you are paying. You&apos;ll complete the payment in your UPI app; MuktPay doesn&apos;t process or hold your money.
           </Text>
         </MuktCard>
 
-        {/* Phase 7 (checkout) turns this into the real "Start payment". */}
-        <MuktButton title="Start payment: coming next" disabled onPress={() => {}} />
-
-        {__DEV__ && (
-          <MuktCard variant="inset">
-            <Text style={text('label', colors.primary)}>DEVELOPER TEST · PHASE 5</Text>
-            <Text style={[text('caption', colors.textSecondary), styles.mt]}>
-              Opens your real UPI app with this payment pre-filled. Nothing is paid unless you confirm
-              with your UPI PIN in that app. The sample merchants are fake, so the app will refuse them.
+        {launchState === 'waiting' && (
+          <MuktCard variant="inset" padding="md">
+            <Text accessibilityLiveRegion="polite" style={text('bodyStrong', colors.primary)}>
+              Complete the payment in your UPI app
             </Text>
-            {previewUrl && (
-              <Text selectable style={[text('micro', colors.textSecondary), styles.mt]}>
-                {previewUrl}
-              </Text>
-            )}
-
-            {launchState === 'waiting' && (
-              <Text accessibilityLiveRegion="polite" style={[text('bodyStrong', colors.primary), styles.mt]}>
-                Waiting for you to come back from the UPI app…
-              </Text>
-            )}
-            {launchState === 'returned' && (
-              <View style={[styles.stack, styles.mt]}>
-                <Text accessibilityLiveRegion="polite" style={text('bodyStrong')}>
-                  Welcome back. Did the payment go through?
-                </Text>
-                <MuktButton title="Yes, it was paid" size="md" onPress={() => setLaunchState('idle')} />
-                <MuktButton title="No / cancelled" size="md" variant="secondary" onPress={() => setLaunchState('idle')} />
-                <Text style={text('micro', colors.textSecondary)}>
-                  Phase 7 records this answer against the payment. It is the user's word, not proof.
-                </Text>
-              </View>
-            )}
-            {launchError && (
-              <Text accessibilityLiveRegion="polite" style={[text('label', colors.danger), styles.mt]}>
-                {launchError}
-              </Text>
-            )}
-
-            {launchState === 'idle' && (
-              <View style={styles.mt}>
-                <MuktButton title="Open in UPI app" variant="secondary" disabled={!ready} onPress={openUpiApp} />
-              </View>
-            )}
-            {launchState === 'waiting' && (
-              <View style={styles.mt}>
-                <MuktButton title="Cancel" variant="ghost" size="md" onPress={() => setLaunchState('idle')} />
-              </View>
-            )}
+            <Text style={[text('caption', colors.textSecondary), styles.mt]}>
+              When you&apos;re done, come back to MuktPay. Payment status is handled by your UPI app.
+            </Text>
+            <View style={styles.mt}>
+              <MuktButton title="Didn't open? Try again" variant="ghost" size="md" onPress={() => setLaunchState('idle')} />
+            </View>
           </MuktCard>
         )}
+
+        {launchState === 'returned' && (
+          <MuktCard variant="inset" padding="md">
+            <Text accessibilityLiveRegion="polite" style={text('bodyStrong')}>
+              You&apos;re back in MuktPay
+            </Text>
+            <Text style={[text('caption', colors.textSecondary), styles.mt]}>
+              Check your UPI app for the status of this payment. MuktPay can&apos;t see whether it went through.
+            </Text>
+          </MuktCard>
+        )}
+
+        {launchError && (
+          <MuktCard variant="flat" padding="md">
+            <Text accessibilityLiveRegion="polite" style={text('bodyStrong', colors.danger)}>
+              {launchError}
+            </Text>
+            <Text style={[text('caption', colors.textSecondary), styles.mt]}>
+              You can also open your UPI app yourself and pay to the UPI ID shown above.
+            </Text>
+          </MuktCard>
+        )}
+
+        {!needsSplit && (
+          <View style={styles.stack}>
+            <MuktButton
+              title={launchState === 'returned' ? 'Open UPI App again' : 'Open UPI App'}
+              loading={launchState === 'opening'}
+              disabled={!ready || launchState === 'waiting'}
+              onPress={() => {
+                if (amountPaise !== null) void openUpiApp(amountPaise);
+              }}
+            />
+            <Text style={[text('caption', colors.textSecondary), styles.centered]}>
+              {!ready && amountFromQr === null && !typedAmount
+                ? 'Enter an amount to continue.'
+                : 'Complete your payment securely in your UPI app.'}
+            </Text>
+          </View>
+        )}
+
         <MuktButton title="Scan another code" variant="ghost" onPress={() => router.back()} />
       </ScrollView>
     </View>
@@ -209,4 +247,5 @@ const styles = StyleSheet.create({
   },
   mt: { marginTop: spacing.md },
   stack: { gap: spacing.md },
+  centered: { textAlign: 'center' },
 });

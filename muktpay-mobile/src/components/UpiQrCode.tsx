@@ -8,6 +8,11 @@ interface UpiQrCodeProps {
   size?: number;
   /** Dims the code once its payment is done, so the merchant doesn't re-show a paid QR. */
   dimmed?: boolean;
+  /**
+   * No padding, shadow or rounded tile: just the code on white. Used inside the QR poster, which
+   * provides its own white background and whitespace (and is what gets downloaded or printed).
+   */
+  bare?: boolean;
 }
 
 /**
@@ -19,13 +24,13 @@ interface UpiQrCodeProps {
  * trade-off for payment QRs — enough tolerance for a smudged screen without inflating the
  * module count so far that small phones can't render it legibly.
  */
-export function UpiQrCode({ value, size = 220, dimmed = false }: UpiQrCodeProps) {
+export function UpiQrCode({ value, size = 220, dimmed = false, bare = false }: UpiQrCodeProps) {
   return (
     <View
       accessible
       accessibilityRole="image"
       accessibilityLabel="UPI QR code — ask the customer to scan this"
-      style={[styles.tile, shadows.raised('md'), dimmed && styles.dimmed]}
+      style={[bare ? styles.bare : [styles.tile, shadows.raised('md')], dimmed && styles.dimmed]}
     >
       <QRCode value={value} size={size} color="#000000" backgroundColor="#FFFFFF" ecl="M" quietZone={8} />
     </View>
@@ -38,6 +43,10 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     borderRadius: radius.lg,
     backgroundColor: colors.white,
+  },
+  bare: {
+    alignSelf: 'center',
+    backgroundColor: '#FFFFFF',
   },
   dimmed: { opacity: 0.25 },
 });

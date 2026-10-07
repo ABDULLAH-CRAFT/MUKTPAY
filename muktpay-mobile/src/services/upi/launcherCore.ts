@@ -11,7 +11,7 @@ export interface LaunchOptions {
   app?: UpiAppId;
 }
 
-export type LaunchFailure = 'INVALID_PAYMENT' | 'NO_UPI_APP';
+export type LaunchFailure = 'INVALID_PAYMENT' | 'NO_UPI_APP' | 'UNSUPPORTED_PLATFORM';
 
 export type LaunchResult =
   | { ok: true; scheme: UpiScheme; url: string; preservedOriginal: boolean }
@@ -26,6 +26,16 @@ const IOS_TRY_ORDER: UpiScheme[] = ['phonepe', 'gpay', 'paytm', 'upi'];
 
 export function createUpiLauncher(deps: LauncherDeps) {
   return async function launchUpiPayment(payment: UpiPayment, options: LaunchOptions): Promise<LaunchResult> {
+    // Browsers and other platforms have no UPI app to hand off to. Say so instead of pretending to open one.
+    if (deps.os === 'other') {
+      return {
+        ok: false,
+        reason: 'UNSUPPORTED_PLATFORM',
+        message:
+          "UPI apps can't be opened from this device or browser. Open MuktPay on your phone, or scan the shop's QR code with your UPI app.",
+      };
+    }
+
     const wanted = options.app ?? 'any';
 
     let schemes: UpiScheme[];
@@ -54,7 +64,8 @@ export function createUpiLauncher(deps: LauncherDeps) {
     return {
       ok: false,
       reason: 'NO_UPI_APP',
-      message: "Couldn't open a UPI app. Make sure PhonePe, Google Pay, Paytm or another UPI app is installed.",
+      message:
+        "We couldn't open your UPI app. Make sure PhonePe, Google Pay, Paytm or another UPI app is installed, or scan the shop's QR code from inside your UPI app.",
     };
   };
 }

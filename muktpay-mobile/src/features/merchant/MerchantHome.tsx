@@ -58,7 +58,7 @@ export function MerchantHome() {
 
       <ScrollView contentContainerStyle={styles.content}>
         <MuktCard onPress={() => router.push('/merchant/history')} accessibilityLabel="See today's bill history">
-          <Text style={text('label', colors.textSecondary)}>TODAY&apos;S COLLECTIONS</Text>
+          <Text style={text('label', colors.textSecondary)}>MARKED AS PAID TODAY</Text>
           <AmountDisplay amountPaise={collectedToday} size="xl" tone="success" />
           {invoicedToday > 0 ? (
             <View style={styles.heroProgress}>
@@ -72,7 +72,7 @@ export function MerchantHome() {
           )}
           {today && today.billsCreated > 0 ? (
             <Text style={[text('caption', colors.textSecondary), styles.mtXs]}>
-              {today.billsCreated} bill{today.billsCreated === 1 ? '' : 's'} today · {today.settledCount} settled
+              {today.billsCreated} bill{today.billsCreated === 1 ? '' : 's'} today · {today.settledCount}  fully marked paid
             </Text>
           ) : null}
         </MuktCard>
@@ -94,7 +94,7 @@ export function MerchantHome() {
             <View style={[styles.progressRow, styles.mt]}>
               <AmountDisplay amountPaise={openBill.totalPaise} size="md" tone="primary" />
               <Text style={text('caption', colors.textSecondary)}>
-                {openBillPaidCount} of {openBillTotal} paid
+              {openBillPaidCount} of {openBillTotal} marked paid
               </Text>
             </View>
             <View style={styles.mtSm}>

@@ -8,8 +8,28 @@ import type { SplitStrategy } from '@/types/split';
 import { formatPaise } from '@/utils/money';
 import { useSplitPreview } from './useSplitPreview';
 
+interface SplitPreviewSectionProps {
+  totalPaise: number;
+  /**
+   * When true, every payment in the plan gets its own "Open UPI App" button. Used when the amount is
+   * too large for one UPI payment, so the customer opens them one at a time.
+   */
+  payEachPart?: boolean;
+  onOpenPayment?: (amountPaise: number, index: number) => void;
+  /** Payments the customer has opened in their UPI app. "Opened" is not "paid". */
+  openedParts?: number[];
+  /** Disables the buttons while a UPI app is being opened or is still open. */
+  busy?: boolean;
+}
+
 /** Shows how a bill will be paid, straight from the server's split engine. */
-export function SplitPreviewSection({ totalPaise }: { totalPaise: number }) {
+export function SplitPreviewSection({
+  totalPaise,
+  payEachPart = false,
+  onOpenPayment,
+  openedParts = [],
+  busy = false,
+}: SplitPreviewSectionProps) {
   const [strategy, setStrategy] = useState<SplitStrategy>('greedy');
 
   // Wait for typing to settle before asking the server.
@@ -22,7 +42,7 @@ export function SplitPreviewSection({ totalPaise }: { totalPaise: number }) {
 
   return (
     <View style={styles.section}>
-      <Text style={[text('label', colors.textSecondary), styles.title]}>HOW THIS WILL BE PAID</Text>
+      <Text style={[text('label', colors.textSecondary), styles.title]}>HOW THE PAYMENT IS SPLIT</Text>
 
       <View style={styles.toggle}>
         <MuktButton
@@ -60,22 +80,42 @@ export function SplitPreviewSection({ totalPaise }: { totalPaise: number }) {
       )}
 
       {plan && addsUp && (
-        <View style={[styles.list, settling && styles.settling]}>
+          <View style={[styles.list, settling && styles.settling]}>
           <Text style={text('bodyStrong')}>
             {plan.trancheCount === 1
               ? 'One payment, no split needed'
               : `${plan.trancheCount} payments · ${formatPaise(plan.totalPaise)} total`}
           </Text>
 
-          {plan.tranches.map((t) => (
-            <SplitCard
-              key={t.index}
-              marker={String(t.index)}
-              label={`Payment ${t.index} of ${plan.trancheCount}`}
-              amountPaise={t.amountPaise}
-              status="pending"
-            />
-          ))}
+          {plan.tranches.map((t) => {
+            const opened = openedParts.includes(t.index);
+            return (
+              <View key={t.index} style={styles.part}>
+                <SplitCard
+                  marker={String(t.index)}
+                  label={`Payment ${t.index} of ${plan.trancheCount}`}
+                  amountPaise={t.amountPaise}
+                  status="pending"
+                />
+                {payEachPart && onOpenPayment ? (
+                  <>
+                    <MuktButton
+                      title={opened ? `Open UPI App again for payment ${t.index}` : `Open UPI App for payment ${t.index}`}
+                      size="md"
+                      variant={opened ? 'secondary' : 'primary'}
+                      disabled={busy || settling}
+                      onPress={() => onOpenPayment(t.amountPaise, t.index)}
+                    />
+                    {opened ? (
+                      <Text style={text('caption', colors.textSecondary)}>
+                        Opened in your UPI app. Check your UPI app for the result before starting the next payment.
+                      </Text>
+                    ) : null}
+                  </>
+                ) : null}
+              </View>
+            );
+          })}
 
           {plan.warnings.map((warning) => (
             <Text key={warning} style={text('caption', colors.warning)}>
@@ -93,5 +133,6 @@ const styles = StyleSheet.create({
   title: { marginLeft: spacing.xs, letterSpacing: 0.8 },
   toggle: { flexDirection: 'row', gap: spacing.md },
   list: { gap: spacing.md },
+  part: { gap: spacing.sm },
   settling: { opacity: 0.45 },
 });

@@ -21,9 +21,10 @@ export function CustomerHome() {
 
       <ScrollView contentContainerStyle={styles.content}>
         <MuktCard>
-          <Text style={text('h3')}>You&apos;re signed in ✓</Text>
+          <Text style={text('h3')}>Pay any shop with UPI</Text>
           <Text style={[text('body', colors.textSecondary), styles.mt]}>
-            Your session is stored securely on this device and renews itself automatically.
+            Scan a shop&apos;s UPI QR code, then finish the payment in your own UPI app. MuktPay never
+            holds or processes your money.
           </Text>
         </MuktCard>
 

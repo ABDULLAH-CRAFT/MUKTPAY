@@ -14,7 +14,7 @@ function describe(event: BillEvent): string {
     case 'chunk_marked_pending':
       return `Payment ${event.chunkIndex} marked unpaid${amount}`;
     case 'bill_settled':
-      return 'All payments received';
+      return 'All payments marked as paid ';
     case 'bill_reopened':
       return 'Bill reopened';
     case 'bill_cancelled':

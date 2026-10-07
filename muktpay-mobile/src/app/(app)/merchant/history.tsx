@@ -119,7 +119,7 @@ export default function BillHistoryScreen() {
                 <View style={[styles.row, styles.mt]}>
                   <AmountDisplay amountPaise={bill.totalPaise} size="md" tone="primary" />
                   <Text style={text('caption', colors.textSecondary)}>
-                    {paidCount} of {bill.chunks.length} paid
+                    {paidCount} of {bill.chunks.length} marked paid
                   </Text>
                 </View>
                 <Text style={[text('caption', colors.textSecondary), styles.mt]}>
