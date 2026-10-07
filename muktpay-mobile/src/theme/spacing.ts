@@ -21,6 +21,8 @@ export const layout = {
   screenPadding: 20,
   /** Minimum comfortable tap target (Apple HIG 44pt / Material 48dp). */
   minTouchTarget: 44,
+  /** Widest the content column grows on tablets/desktop. Phones are narrower, so unaffected. */
+  maxContentWidth: 560,
 } as const;
 
 export type SpacingKey = keyof typeof spacing;

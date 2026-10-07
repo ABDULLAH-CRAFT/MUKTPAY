@@ -44,6 +44,9 @@ export function AmountDisplay({
 
   return (
     <Text
+      numberOfLines={1}
+      adjustsFontSizeToFit
+      minimumFontScale={0.6}
       accessibilityLabel={`${negative ? 'minus ' : ''}${whole}${decimals ? ` rupees ${Number(decimals)} paise` : ' rupees'}`}
       style={[
         base,
@@ -62,5 +65,5 @@ export function AmountDisplay({
 
 const styles = StyleSheet.create({
   // Digits all the same width so lists of amounts line up.
-  numbers: { fontVariant: ['tabular-nums'] },
+  numbers: { fontVariant: ['tabular-nums'], flexShrink: 1 },
 });

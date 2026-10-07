@@ -1,21 +1,22 @@
 import { useEffect } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { AmountDisplay, MuktButton, MuktCard, MuktHeader, SplitCard } from '@/components';
-import { useBill, useCancelBill, useSetChunkStatus } from '@/features/merchant/useBills';
-import { getApiErrorMessage } from '@/lib/apiError';
-import { colors, layout, spacing, text } from '@/theme/theme';
-import { canCancelBill, isCancelled, isSettled, nextPendingChunk, paidPaise } from '@/types/bill';
-import { formatPaise } from '@/utils/money';
+import { AmountDisplay, ErrorState, MuktButton, MuktCard, MuktHeader, ScreenLoading, SplitCard } from '@/components';
 import { BillActivity } from '@/features/merchant/BillActivity';
 import { QrPanel } from '@/features/merchant/QrPanel';
+import { useBill, useCancelBill, useSetChunkStatus } from '@/features/merchant/useBills';
+import { getApiErrorMessage } from '@/lib/apiError';
+import { contentColumn } from '@/theme/responsive';
+import { colors, spacing, text } from '@/theme/theme';
+import { canCancelBill, isCancelled, isSettled, nextPendingChunk, paidPaise } from '@/types/bill';
+import { formatPaise } from '@/utils/money';
 
 /**
  * The counter screen: show one QR, wait for the customer to pay it, mark it, show the next.
  *
  * Only one code is shown at a time on purpose. A customer looking at four QR codes will scan
- * whichever is nearest, pay one twice, or skip one — and with no payment callback (see below)
- * the merchant has no way to notice. One at a time makes the sequence self-evident.
+ * whichever is nearest, pay one twice, or skip one, and with no payment callback the merchant
+ * has no way to notice. One at a time makes the sequence self-evident.
  *
  * The bill lives on the server (identified by `ref`, passed as a route param), so leaving this
  * screen loses nothing: it stays in history for the merchant to come back to.
@@ -25,7 +26,7 @@ export default function BillScreen() {
   const { ref: refParam } = useLocalSearchParams<{ ref?: string | string[] }>();
   const ref = Array.isArray(refParam) ? refParam[0] : refParam;
 
-  const { data: bill, isLoading, isError, error } = useBill(ref);
+  const { data: bill, isLoading, isError, error, refetch, isRefetching } = useBill(ref);
   const setChunkStatus = useSetChunkStatus(ref ?? '');
   const cancelBill = useCancelBill(ref ?? '');
 
@@ -42,9 +43,7 @@ export default function BillScreen() {
     return (
       <View style={styles.page}>
         <MuktHeader title="Bill" onBack={goHome} />
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
+        <ScreenLoading label="Loading bill…" />
       </View>
     );
   }
@@ -53,13 +52,14 @@ export default function BillScreen() {
     return (
       <View style={styles.page}>
         <MuktHeader title="Bill" onBack={goHome} />
-        <View style={styles.body}>
-          <MuktCard variant="flat">
-            <Text style={text('bodyStrong', colors.danger)}>
-              {getApiErrorMessage(error) || 'Bill not found'}
-            </Text>
-          </MuktCard>
-          <MuktButton title="Back" onPress={goHome} />
+        <View style={styles.column}>
+          <ErrorState
+            title="Couldn't load this bill"
+            message={isError ? getApiErrorMessage(error) : 'Bill not found'}
+            onRetry={() => void refetch()}
+            retrying={isRefetching}
+          />
+          <MuktButton title="Back" variant="ghost" onPress={goHome} />
         </View>
       </View>
     );
@@ -107,9 +107,7 @@ export default function BillScreen() {
 
           <View style={styles.progressRow}>
             <AmountDisplay amountPaise={collected} size="lg" tone={settled ? 'success' : 'default'} />
-            <Text style={text('body', colors.textSecondary)}>
-              of {formatPaise(bill.totalPaise)}
-            </Text>
+            <Text style={text('body', colors.textSecondary)}>of {formatPaise(bill.totalPaise)}</Text>
           </View>
         </MuktCard>
 
@@ -118,28 +116,26 @@ export default function BillScreen() {
             <Text style={text('h2', colors.danger)}>Bill cancelled</Text>
             <Text style={[text('body', colors.textSecondary), styles.mt]}>
               This bill was called off
-              {bill.cancelledAt ? ` on ${new Date(bill.cancelledAt).toLocaleString()}` : ''}. It&apos;s kept here as a record
-              and can&apos;t be edited.
+              {bill.cancelledAt ? ` on ${new Date(bill.cancelledAt).toLocaleString()}` : ''}. It&apos;s kept here as a
+              record and can&apos;t be edited.
             </Text>
           </MuktCard>
         ) : settled ? (
           <MuktCard>
             <Text style={text('h2')}>All payments marked as paid</Text>
             <Text style={[text('body', colors.textSecondary), styles.mt]}>
-              You marked every part of {bill.ref} as paid. MuktPay doesn&apos;t process or verify UPI
-              payments, so check your bank app or passbook before the customer leaves.
+              You marked every part of {bill.ref} as paid. MuktPay doesn&apos;t process or verify UPI payments, so
+              check your bank app or passbook before the customer leaves.
             </Text>
           </MuktCard>
         ) : current ? (
           <View style={styles.current}>
-            <BillActivity billRef={bill.ref} />
-
             {expired ? (
               <MuktCard padding="md" variant="inset">
                 <Text style={text('label', colors.warning)}>EXPIRED</Text>
                 <Text style={[text('caption', colors.textSecondary), styles.mt]}>
-                  Nothing was marked paid within 24 hours. A QR the customer already has can still work, so only
-                  mark a payment as paid if you actually see the money.
+                  Nothing was marked paid within 24 hours. A QR the customer already has can still work, so only mark a
+                  payment as paid if you actually see the money.
                 </Text>
               </MuktCard>
             ) : null}
@@ -174,7 +170,7 @@ export default function BillScreen() {
 
         {actionError ? (
           <MuktCard variant="flat">
-            <Text style={text('bodyStrong', colors.danger)}>
+            <Text accessibilityLiveRegion="polite" style={text('bodyStrong', colors.danger)}>
               {getApiErrorMessage(actionError)}
             </Text>
           </MuktCard>
@@ -196,11 +192,14 @@ export default function BillScreen() {
           ))}
         </View>
 
+        {/* History lives below the working area, so it never pushes the QR off screen. */}
+        <BillActivity billRef={bill.ref} />
+
         <MuktCard padding="md" variant="inset">
           <Text style={text('label', colors.warning)}>HOW PAYMENT WORKS</Text>
           <Text style={[text('caption', colors.textSecondary), styles.mt]}>
-            The customer pays in their own UPI app. MuktPay only shows the QR code and can&apos;t see or
-            verify the payment, so &quot;Mark as paid&quot; is your own record, not a receipt.
+            The customer pays in their own UPI app. MuktPay only shows the QR code and can&apos;t see or verify the
+            payment, so &quot;Mark as paid&quot; is your own record, not a receipt.
           </Text>
         </MuktCard>
 
@@ -217,7 +216,7 @@ export default function BillScreen() {
         <MuktButton
           title={settled || cancelled ? 'Done' : 'Leave for now'}
           variant={settled || cancelled ? 'primary' : 'ghost'}
-          // The bill stays saved either way — nothing to lose by leaving. Resume it from history.
+          // The bill stays saved either way, so there's nothing to lose by leaving. Resume it from history.
           onPress={goHome}
         />
       </ScrollView>
@@ -227,12 +226,8 @@ export default function BillScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  body: {
-    paddingHorizontal: layout.screenPadding,
-    paddingBottom: spacing.xxxl,
-    gap: spacing.xl,
-  },
+  column: { ...contentColumn, gap: spacing.xl },
+  body: { ...contentColumn, paddingBottom: spacing.xxxl, gap: spacing.xl },
   progressHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -243,17 +238,7 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     gap: spacing.sm,
   },
-  current: {
-    gap: spacing.lg,
-    alignItems: 'center',
-  },
-  centered: {
-    textAlign: 'center',
-  },
-  list: {
-    gap: spacing.md,
-  },
-  mt: {
-    marginTop: spacing.xs,
-  },
+  current: { gap: spacing.lg, alignItems: 'center' },
+  list: { gap: spacing.md },
+  mt: { marginTop: spacing.xs },
 });

@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { AmountDisplay, MuktButton, MuktCard, MuktHeader, MuktInput, SplitCard } from '@/components';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AmountDisplay, Chip, MuktButton, MuktCard, MuktHeader, MuktInput, SplitCard } from '@/components';
 import { useCreateBill } from '@/features/merchant/useBills';
 import { useMerchant } from '@/features/merchant/MerchantProvider';
 import {
@@ -11,9 +12,11 @@ import {
   planSplit,
   type SplitRules,
 } from '@/features/merchant/splitEngine';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { getApiErrorMessage } from '@/lib/apiError';
 import { newIdempotencyKey } from '@/lib/idempotency';
-import { colors, layout, spacing, text } from '@/theme/theme';
+import { contentColumn, keyboardBehavior } from '@/theme/responsive';
+import { colors, spacing, text } from '@/theme/theme';
 import type { SplitStrategy } from '@/types/split';
 import { formatPaise, parseRupeesToPaise } from '@/utils/money';
 
@@ -26,6 +29,8 @@ const NOTE_MAX = 60;
 
 export default function NewBillScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const keyboardVisible = useKeyboardVisible();
   const { profile } = useMerchant();
   const createBill = useCreateBill();
 
@@ -38,7 +43,7 @@ export default function NewBillScreen() {
 
   const totalPaise = amount.trim() ? parseRupeesToPaise(amount) : null;
 
-  // Instant, offline preview — the same split rules the server will apply, computed locally so
+  // Instant, offline preview: the same split rules the server will apply, computed locally so
   // there's no network round-trip while the merchant is still typing the amount. The server
   // recomputes this itself when the bill is actually created, so the two can never disagree.
   const result = useMemo(() => {
@@ -87,130 +92,147 @@ export default function NewBillScreen() {
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-      <View style={styles.page}>
-        <MuktHeader title="New bill" subtitle={profile?.shopName} onBack={goBack} />
+    <KeyboardAvoidingView behavior={keyboardBehavior} style={styles.page}>
+      <MuktHeader title="New bill" subtitle={profile?.shopName} onBack={goBack} />
 
-        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-          <MuktInput
-            label="Total amount"
-            value={amount}
-            onChangeText={setAmount}
-            onBlur={() => setTouched(true)}
-            error={amountError}
-            helper="What the customer owes in total"
-            placeholder="4500"
-            keyboardType="decimal-pad"
-            returnKeyType="next"
-            left={<Text style={text('h3', colors.textSecondary)}>₹</Text>}
-          />
+      <ScrollView
+        contentContainerStyle={styles.body}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
+        <MuktInput
+          label="Total amount"
+          value={amount}
+          onChangeText={setAmount}
+          onBlur={() => setTouched(true)}
+          error={amountError}
+          helper="What the customer owes in total"
+          placeholder="4500"
+          keyboardType="decimal-pad"
+          returnKeyType="next"
+          left={<Text style={text('h3', colors.textSecondary)}>₹</Text>}
+        />
 
-          <MuktInput
-            label="Note (optional)"
-            value={note}
-            onChangeText={setNote}
-            helper="For your own reference — searchable later in history"
-            placeholder="Ramesh, order 12"
-            maxLength={NOTE_MAX}
-            returnKeyType="done"
-          />
+        <MuktInput
+          label="Note (optional)"
+          value={note}
+          onChangeText={setNote}
+          helper="For your own reference, searchable later in history"
+          placeholder="Ramesh, order 12"
+          maxLength={NOTE_MAX}
+          returnKeyType="done"
+        />
 
-          <View style={styles.group}>
-            <Text style={text('label', colors.textSecondary)}>CUSTOMER&apos;S PER-PAYMENT CAP</Text>
-            <View style={styles.chips}>
-              {CAP_PRESETS.map((preset) => (
-                <MuktButton
-                  key={preset.capPaise}
-                  title={preset.label}
-                  variant={preset.capPaise === capPaise ? 'primary' : 'secondary'}
-                  size="md"
-                  fullWidth={false}
-                  onPress={() => setCapPaise(preset.capPaise)}
-                />
-              ))}
-            </View>
-            <Text style={text('caption', colors.textSecondary)}>
-              Each QR is capped at {formatPaise(capPaise)}, just under the limit their app enforces.
+        <View style={styles.group}>
+          <Text style={text('label', colors.textSecondary)}>CUSTOMER&apos;S PER-PAYMENT CAP</Text>
+          <View style={styles.chips} accessibilityRole="radiogroup">
+            {CAP_PRESETS.map((preset) => (
+              <Chip
+                key={preset.capPaise}
+                label={preset.label}
+                selected={preset.capPaise === capPaise}
+                onPress={() => setCapPaise(preset.capPaise)}
+              />
+            ))}
+          </View>
+          <Text style={text('caption', colors.textSecondary)}>
+            Each QR is capped at {formatPaise(capPaise)}, just under the limit their app enforces.
+          </Text>
+        </View>
+
+        <View style={styles.group}>
+          <Text style={text('label', colors.textSecondary)}>HOW TO SPLIT</Text>
+          <View style={styles.chips} accessibilityRole="radiogroup">
+            {(Object.keys(STRATEGY_LABEL) as SplitStrategy[]).map((key) => (
+              <Chip
+                key={key}
+                label={STRATEGY_LABEL[key].title}
+                selected={key === strategy}
+                onPress={() => setStrategy(key)}
+              />
+            ))}
+          </View>
+          <Text style={text('caption', colors.textSecondary)}>{STRATEGY_LABEL[strategy].blurb}</Text>
+        </View>
+
+        {planError ? (
+          <MuktCard variant="flat">
+            <Text accessibilityLiveRegion="polite" style={text('bodyStrong', colors.danger)}>
+              {planError}
             </Text>
-          </View>
+          </MuktCard>
+        ) : null}
 
+        {plan ? (
           <View style={styles.group}>
-            <Text style={text('label', colors.textSecondary)}>HOW TO SPLIT</Text>
-            <View style={styles.chips}>
-              {(Object.keys(STRATEGY_LABEL) as SplitStrategy[]).map((key) => (
-                <MuktButton
-                  key={key}
-                  title={STRATEGY_LABEL[key].title}
-                  variant={key === strategy ? 'primary' : 'secondary'}
-                  size="md"
-                  fullWidth={false}
-                  onPress={() => setStrategy(key)}
-                />
-              ))}
+            <View style={styles.previewHead}>
+              <Text style={text('h3')}>{plan.chunkCount === 1 ? '1 payment' : `${plan.chunkCount} payments`}</Text>
+              <AmountDisplay amountPaise={plan.totalPaise} size="md" tone="primary" />
             </View>
-            <Text style={text('caption', colors.textSecondary)}>{STRATEGY_LABEL[strategy].blurb}</Text>
+
+            {plan.chunks.map((chunk) => (
+              <SplitCard
+                key={chunk.index}
+                marker={String(chunk.index)}
+                label={`Payment ${chunk.index} of ${plan.chunkCount}`}
+                amountPaise={chunk.amountPaise}
+                status="pending"
+              />
+            ))}
+
+            {plan.chunkCount === 1 ? (
+              <Text style={text('caption', colors.textSecondary)}>
+                This fits under the cap, so it&apos;s a single QR, with no splitting needed.
+              </Text>
+            ) : null}
           </View>
+        ) : null}
+      </ScrollView>
 
-          {planError ? (
-            <MuktCard variant="flat">
-              <Text accessibilityLiveRegion="polite" style={text('bodyStrong', colors.danger)}>
-                {planError}
-              </Text>
-            </MuktCard>
-          ) : null}
-
+      {/* Footer: always reachable, rides above the keyboard, errors can't be scrolled out of sight. */}
+      <View
+        style={[styles.footer, { paddingBottom: spacing.md + (keyboardVisible ? 0 : insets.bottom) }]}
+      >
+        <View style={styles.footerInner}>
+          {!profile ? (
+            <Text style={text('caption', colors.warning)}>
+              Add your shop details on the home screen before creating a bill.
+            </Text>
+          ) : (
+            <Text style={text('caption', colors.textSecondary)}>
+              {plan
+                ? `${plan.chunkCount === 1 ? '1 QR code' : `${plan.chunkCount} QR codes`} · ${formatPaise(plan.totalPaise)}`
+                : 'Enter an amount to continue'}
+            </Text>
+          )}
           {submitError ? (
-            <MuktCard variant="flat">
-              <Text accessibilityLiveRegion="polite" style={text('bodyStrong', colors.danger)}>
-                {submitError}
-              </Text>
-            </MuktCard>
+            <Text accessibilityLiveRegion="polite" style={text('label', colors.danger)}>
+              {submitError}
+            </Text>
           ) : null}
-
-          {plan ? (
-            <View style={styles.group}>
-              <View style={styles.previewHead}>
-                <Text style={text('h3')}>
-                  {plan.chunkCount === 1 ? '1 payment' : `${plan.chunkCount} payments`}
-                </Text>
-                <AmountDisplay amountPaise={plan.totalPaise} size="md" tone="primary" />
-              </View>
-
-              {plan.chunks.map((chunk) => (
-                <SplitCard
-                  key={chunk.index}
-                  marker={String(chunk.index)}
-                  label={`Payment ${chunk.index} of ${plan.chunkCount}`}
-                  amountPaise={chunk.amountPaise}
-                  status="pending"
-                />
-              ))}
-
-              {plan.chunkCount === 1 ? (
-                <Text style={text('caption', colors.textSecondary)}>
-                  This fits under the cap, so it&apos;s a single QR — no splitting needed.
-                </Text>
-              ) : null}
-            </View>
-          ) : null}
-
           <MuktButton
             title="Generate QR codes"
             loading={createBill.isPending}
             disabled={!plan || !profile}
             onPress={() => void generate()}
           />
-        </ScrollView>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.background },
-  page: { flex: 1 },
-  body: { paddingHorizontal: layout.screenPadding, paddingBottom: spacing.xxxl, gap: spacing.xl },
+  page: { flex: 1, backgroundColor: colors.background },
+  body: { ...contentColumn, paddingBottom: spacing.xl, gap: spacing.xl },
   group: { gap: spacing.md },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
-  previewHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  previewHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  footer: {
+    paddingTop: spacing.md,
+    backgroundColor: colors.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  footerInner: { ...contentColumn, gap: spacing.sm },
 });

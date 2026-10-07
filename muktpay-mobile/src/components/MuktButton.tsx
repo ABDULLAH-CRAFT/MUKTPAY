@@ -67,9 +67,9 @@ export function MuktButton({
         style,
       ]}
     >
-      <View style={styles.content}>
+            <View style={styles.content}>
         {loading && <ActivityIndicator color={color} style={styles.spinner} />}
-        <Text style={text(size === 'lg' ? 'bodyStrong' : 'label', color)}>{title}</Text>
+        <Text style={[text(size === 'lg' ? 'bodyStrong' : 'label', color), styles.label]}>{title}</Text>
       </View>
     </Pressable>
   );
@@ -77,10 +77,11 @@ export function MuktButton({
 
 const styles = StyleSheet.create({
   base: { borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-  lg: { minHeight: 56, paddingHorizontal: spacing.xl },
-  md: { minHeight: layout.minTouchTarget, paddingHorizontal: spacing.lg },
+  lg: { minHeight: 56, paddingHorizontal: spacing.xl, paddingVertical: spacing.sm },
+  md: { minHeight: layout.minTouchTarget, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
   full: { alignSelf: 'stretch' },
   auto: { alignSelf: 'flex-start' },
-  content: { flexDirection: 'row', alignItems: 'center' },
+  content: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', maxWidth: '100%' },
+  label: { flexShrink: 1, textAlign: 'center' },
   spinner: { marginRight: spacing.sm },
 });

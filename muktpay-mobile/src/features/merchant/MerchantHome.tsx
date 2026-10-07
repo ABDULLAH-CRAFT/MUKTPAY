@@ -1,10 +1,20 @@
 import { useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { AmountDisplay, MuktButton, MuktCard, MuktHeader, StatusBadge } from '@/components';
+import {
+  AccountCard,
+  AmountDisplay,
+  ErrorState,
+  MuktButton,
+  MuktCard,
+  MuktHeader,
+  ScreenLoading,
+  StatusBadge,
+} from '@/components';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { useRole } from '@/features/role/RoleProvider';
-import { colors, layout, radius, spacing, text } from '@/theme/theme';
+import { contentColumn } from '@/theme/responsive';
+import { colors, radius, spacing, text } from '@/theme/theme';
 import { todayRange } from '@/utils/dateRange';
 import { MerchantOnboarding } from './MerchantOnboarding';
 import { useMerchant } from './MerchantProvider';
@@ -17,7 +27,7 @@ function greeting(): string {
   return 'Good evening';
 }
 
-/** A thin filled bar out of `fraction` (0 to 1), clamped. Used for both hero cards below. */
+/** A thin filled bar out of `fraction` (0 to 1), clamped. */
 function ProgressBar({ fraction, tone = colors.primary }: { fraction: number; tone?: string }) {
   const pct = Math.max(0, Math.min(1, fraction));
   return (
@@ -27,25 +37,41 @@ function ProgressBar({ fraction, tone = colors.primary }: { fraction: number; to
   );
 }
 
+// A whole-rupee string for the "of ₹X billed" line, since no paise precision is needed there.
+function formatRupeesRounded(paise: number): string {
+  return `₹${(paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+}
+
 /** The collect-a-payment side: onboarding until a profile exists, then the dashboard. */
 export function MerchantHome() {
   const router = useRouter();
   const { logout } = useAuth();
   const { resetRole } = useRole();
   const { status, profile } = useMerchant();
-  const { data: openBill } = useLatestOpenBill();
-  const { data: today } = useBillsSummary(todayRange());
-  const [loggingOut, setLoggingOut] = useState(false);
+  const { data: openBill, refetch: refetchOpenBill } = useLatestOpenBill();
+  const {
+    data: today,
+    isError: todayFailed,
+    isFetching: todayFetching,
+    refetch: refetchToday,
+  } = useBillsSummary(todayRange());
+  const [refreshing, setRefreshing] = useState(false);
 
   if (status === 'loading') {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.primary} />
+      <View style={styles.page}>
+        <ScreenLoading />
       </View>
     );
   }
 
   if (!profile) return <MerchantOnboarding />;
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.allSettled([refetchToday(), refetchOpenBill()]);
+    setRefreshing(false);
+  };
 
   const collectedToday = today?.collectedPaise ?? 0;
   const invoicedToday = today?.invoicedPaise ?? 0;
@@ -56,27 +82,18 @@ export function MerchantHome() {
     <View style={styles.page}>
       <MuktHeader title={greeting()} subtitle={profile.shopName} />
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <MuktCard onPress={() => router.push('/merchant/history')} accessibilityLabel="See today's bill history">
-          <Text style={text('label', colors.textSecondary)}>MARKED AS PAID TODAY</Text>
-          <AmountDisplay amountPaise={collectedToday} size="xl" tone="success" />
-          {invoicedToday > 0 ? (
-            <View style={styles.heroProgress}>
-              <ProgressBar fraction={collectedToday / invoicedToday} tone={colors.success} />
-              <Text style={[text('caption', colors.textSecondary), styles.mtXs]}>
-                of {formatRupeesRounded(invoicedToday)} billed
-              </Text>
-            </View>
-          ) : (
-            <Text style={[text('caption', colors.textSecondary), styles.mt]}>No bills yet today.</Text>
-          )}
-          {today && today.billsCreated > 0 ? (
-            <Text style={[text('caption', colors.textSecondary), styles.mtXs]}>
-              {today.billsCreated} bill{today.billsCreated === 1 ? '' : 's'} today · {today.settledCount}  fully marked paid
-            </Text>
-          ) : null}
-        </MuktCard>
-
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void onRefresh()}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      >
+        {/* 1 · Work in progress comes first */}
         {openBill ? (
           <MuktCard
             onPress={() => router.push({ pathname: '/merchant/bill', params: { ref: openBill.ref } })}
@@ -94,16 +111,17 @@ export function MerchantHome() {
             <View style={[styles.progressRow, styles.mt]}>
               <AmountDisplay amountPaise={openBill.totalPaise} size="md" tone="primary" />
               <Text style={text('caption', colors.textSecondary)}>
-              {openBillPaidCount} of {openBillTotal} marked paid
+                {openBillPaidCount} of {openBillTotal} marked paid
               </Text>
             </View>
-            <View style={styles.mtSm}>
+            <View style={styles.mt}>
               <ProgressBar fraction={openBillTotal ? openBillPaidCount / openBillTotal : 0} />
             </View>
             <Text style={[text('caption', colors.textSecondary), styles.mtXs]}>Ref {openBill.ref}</Text>
           </MuktCard>
         ) : null}
 
+        {/* 2 · Primary actions */}
         <View style={styles.actionRow}>
           <MuktButton
             title="New bill"
@@ -120,6 +138,38 @@ export function MerchantHome() {
           />
         </View>
 
+        {/* 3 · Today */}
+        {todayFailed && !today ? (
+          <ErrorState
+            title="Couldn't load today's totals"
+            message="Check your connection and try again. You can still create bills."
+            onRetry={() => void refetchToday()}
+            retrying={todayFetching}
+          />
+        ) : (
+          <MuktCard onPress={() => router.push('/merchant/history')} accessibilityLabel="See today's bill history">
+            <Text style={text('label', colors.textSecondary)}>MARKED AS PAID TODAY</Text>
+            <AmountDisplay amountPaise={collectedToday} size="xl" tone="success" />
+            {invoicedToday > 0 ? (
+              <View style={styles.heroProgress}>
+                <ProgressBar fraction={collectedToday / invoicedToday} tone={colors.success} />
+                <Text style={[text('caption', colors.textSecondary), styles.mtXs]}>
+                  of {formatRupeesRounded(invoicedToday)} billed
+                </Text>
+              </View>
+            ) : (
+              <Text style={[text('caption', colors.textSecondary), styles.mt]}>No bills yet today.</Text>
+            )}
+            {today && today.billsCreated > 0 ? (
+              <Text style={[text('caption', colors.textSecondary), styles.mtXs]}>
+                {today.billsCreated} bill{today.billsCreated === 1 ? '' : 's'} today · {today.settledCount} fully marked
+                paid
+              </Text>
+            ) : null}
+          </MuktCard>
+        )}
+
+        {/* 4 · Where the money goes */}
         <MuktCard padding="md">
           <View style={styles.cardHead}>
             <Text style={text('label', colors.textSecondary)}>PAYMENTS GO TO</Text>
@@ -129,62 +179,37 @@ export function MerchantHome() {
               </View>
             ) : null}
           </View>
-          <Text style={[text('h3'), styles.mt]}>{profile.vpa}</Text>
+          <Text selectable style={[text('h3'), styles.mt]}>
+            {profile.vpa}
+          </Text>
           <View style={styles.editRow}>
-            <Text style={text('caption', colors.textSecondary)}>{profile.issuerLabel ?? 'Handle not recognised'}</Text>
-            <Text
-              accessibilityRole="button"
-              onPress={() => router.push('/merchant/profile')}
-              style={text('label', colors.primary)}
-            >
-              Edit
+            <Text style={[text('caption', colors.textSecondary), styles.flex]} numberOfLines={1}>
+              {profile.issuerLabel ?? 'Handle not recognised'}
             </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Edit shop details"
+              hitSlop={12}
+              onPress={() => router.push('/merchant/profile')}
+              style={styles.editButton}
+            >
+              <Text style={text('label', colors.primary)}>Edit</Text>
+            </Pressable>
           </View>
         </MuktCard>
 
-        <MuktCard padding="md" variant="flat" style={styles.accountCard}>
-          <AccountRow label="Switch to paying" onPress={() => void resetRole()} />
-          <View style={styles.divider} />
-          <AccountRow label="Log out" tone={colors.danger} loading={loggingOut} onPress={async () => {
-            setLoggingOut(true);
-            await logout();
-          }} />
-        </MuktCard>
+        <AccountCard switchLabel="Switch to paying" onSwitch={() => void resetRole()} onLogout={logout} />
       </ScrollView>
     </View>
   );
 }
 
-function AccountRow({
-  label,
-  onPress,
-  tone = colors.textPrimary,
-  loading = false,
-}: {
-  label: string;
-  onPress: () => void;
-  tone?: string;
-  loading?: boolean;
-}) {
-  return (
-    <Text accessibilityRole="button" onPress={loading ? undefined : onPress} style={styles.accountRow}>
-      <Text style={text('bodyStrong', tone)}>{loading ? 'Logging out…' : label}</Text>
-    </Text>
-  );
-}
-
-// Local, tiny helper: a whole-rupee string for the "of ₹X billed" line — no paise precision needed.
-function formatRupeesRounded(paise: number): string {
-  return `₹${(paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-}
-
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  content: { paddingHorizontal: layout.screenPadding, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  flex: { flex: 1 },
+  content: { ...contentColumn, paddingBottom: spacing.xxxl, gap: spacing.lg },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   mt: { marginTop: spacing.sm },
-  mtSm: { marginTop: spacing.sm },
   mtXs: { marginTop: spacing.xs },
   heroProgress: { marginTop: spacing.md },
   progressRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.md },
@@ -198,8 +223,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: colors.warningSoft,
   },
-  editRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm },
-  accountCard: { gap: 0 },
-  accountRow: { paddingVertical: spacing.md },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
+  editRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm, gap: spacing.md },
+  editButton: { minHeight: 44, minWidth: 44, alignItems: 'flex-end', justifyContent: 'center' },
 });

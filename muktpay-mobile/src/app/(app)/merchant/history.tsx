@@ -1,10 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { AmountDisplay, MuktButton, MuktCard, MuktHeader, MuktInput, StatusBadge } from '@/components';
+import {
+  AmountDisplay,
+  Chip,
+  EmptyState,
+  ErrorState,
+  MuktCard,
+  MuktHeader,
+  MuktInput,
+  ScreenLoading,
+  StatusBadge,
+} from '@/components';
 import { useBillsInfinite, type BillsFilter } from '@/features/merchant/useBills';
 import { getApiErrorMessage } from '@/lib/apiError';
-import { colors, layout, spacing, text } from '@/theme/theme';
+import { contentColumn } from '@/theme/responsive';
+import { colors, spacing, text } from '@/theme/theme';
 import { last7DaysRange, todayRange } from '@/utils/dateRange';
 import type { Bill } from '@/types/bill';
 import { formatPaise } from '@/utils/money';
@@ -45,6 +56,13 @@ export default function BillHistoryScreen() {
   const bills = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data]);
 
   const goBack = () => (router.canGoBack() ? router.back() : router.replace('/'));
+  const filtered = Boolean(search) || dateFilter !== 'all';
+
+  const clearFilters = () => {
+    setSearchInput('');
+    setSearch('');
+    setDateFilter('all');
+  };
 
   return (
     <View style={styles.page}>
@@ -59,14 +77,12 @@ export default function BillHistoryScreen() {
           returnKeyType="search"
           autoCapitalize="none"
         />
-        <View style={styles.chips}>
+        <View style={styles.chips} accessibilityRole="radiogroup">
           {DATE_FILTERS.map((item) => (
-            <MuktButton
+            <Chip
               key={item.key}
-              title={item.label}
-              variant={item.key === dateFilter ? 'primary' : 'secondary'}
-              size="md"
-              fullWidth={false}
+              label={item.label}
+              selected={item.key === dateFilter}
               onPress={() => setDateFilter(item.key)}
             />
           ))}
@@ -74,32 +90,58 @@ export default function BillHistoryScreen() {
       </View>
 
       {isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
-      ) : isError ? (
-        <View style={styles.body}>
-          <MuktCard variant="flat">
-            <Text style={text('bodyStrong', colors.danger)}>{getApiErrorMessage(error)}</Text>
-          </MuktCard>
+        <ScreenLoading label="Loading bills…" />
+      ) : isError && bills.length === 0 ? (
+        <View style={styles.column}>
+          <ErrorState
+            title="Couldn't load your bills"
+            message={getApiErrorMessage(error)}
+            onRetry={() => void refetch()}
+            retrying={isRefetching}
+          />
         </View>
       ) : (
         <FlatList<Bill>
-          contentContainerStyle={styles.body}
+          contentContainerStyle={[styles.body, bills.length === 0 && styles.grow]}
           data={bills}
           keyExtractor={(bill) => bill.id}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           onEndReachedThreshold={0.4}
           onEndReached={() => {
-            if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+            if (hasNextPage && !isFetchingNextPage && !isError) void fetchNextPage();
           }}
           refreshing={isRefetching && !isFetchingNextPage}
           onRefresh={() => void refetch()}
           ListEmptyComponent={
-            <Text style={[text('body', colors.textSecondary), styles.empty]}>
-              {search || dateFilter !== 'all' ? 'No bills match.' : 'No bills yet.'}
-            </Text>
+            filtered ? (
+              <EmptyState
+                glyph="🔍"
+                title="No bills match"
+                message="Try a different search or date range."
+                actionLabel="Clear filters"
+                onAction={clearFilters}
+              />
+            ) : (
+              <EmptyState
+                title="No bills yet"
+                message="Bills you create will show up here."
+                actionLabel="Create a bill"
+                onAction={() => router.push('/merchant/new-bill')}
+              />
+            )
           }
-          ListFooterComponent={isFetchingNextPage ? <ActivityIndicator color={colors.primary} style={styles.footer} /> : null}
+          ListFooterComponent={
+            isFetchingNextPage ? (
+              <ActivityIndicator color={colors.primary} style={styles.footer} />
+            ) : isError && bills.length > 0 ? (
+              <ErrorState
+                title="Couldn't load more"
+                message={getApiErrorMessage(error)}
+                onRetry={() => void fetchNextPage()}
+              />
+            ) : null
+          }
           renderItem={({ item: bill }) => {
             const paidCount = bill.chunks.filter((c) => c.status === 'paid').length;
             return (
@@ -109,7 +151,9 @@ export default function BillHistoryScreen() {
               >
                 <View style={styles.row}>
                   <Text style={text('label', colors.textSecondary)}>{bill.ref}</Text>
-                  <StatusBadge status={bill.status === 'settled' ? 'paid' : bill.status === 'open' ? 'processing' : bill.status} />
+                  <StatusBadge
+                    status={bill.status === 'settled' ? 'paid' : bill.status === 'open' ? 'processing' : bill.status}
+                  />
                 </View>
                 {bill.note ? (
                   <Text style={[text('bodyStrong'), styles.mt]} numberOfLines={1}>
@@ -136,12 +180,12 @@ export default function BillHistoryScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  filters: { paddingHorizontal: layout.screenPadding, paddingBottom: spacing.md, gap: spacing.md },
+  column: { ...contentColumn },
+  filters: { ...contentColumn, paddingBottom: spacing.md, gap: spacing.md },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  body: { paddingHorizontal: layout.screenPadding, paddingBottom: spacing.xxxl, gap: spacing.md },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  body: { ...contentColumn, paddingBottom: spacing.xxxl, gap: spacing.md },
+  grow: { flexGrow: 1, justifyContent: 'center' },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   mt: { marginTop: spacing.xs },
-  empty: { textAlign: 'center', marginTop: spacing.xl },
   footer: { paddingVertical: spacing.lg },
 });

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MuktCard, MuktHeader } from '@/components';
 import { useAuth } from '@/features/auth/AuthProvider';
-import { colors, layout, radius, shadows, spacing, text } from '@/theme/theme';
+import { contentColumn } from '@/theme/responsive';
+import { colors, radius, shadows, spacing, text } from '@/theme/theme';
 import { useRole, type AppRole } from './RoleProvider';
 
 interface Choice {
@@ -19,14 +20,22 @@ const CHOICES: Choice[] = [
     glyph: '📱',
     title: "I'm paying",
     subtitle: 'Scan a QR code and pay a shop',
-    bullets: ['Scan any UPI QR', 'Split a big bill into smaller payments', 'Pay from any UPI app on your phone'],
+    bullets: [
+      'Scan any UPI QR',
+      'Split a big bill into smaller payments',
+      'Pay from any UPI app on your phone',
+    ],
   },
   {
     role: 'merchant',
     glyph: '🏪',
     title: "I'm collecting",
     subtitle: 'Take payment from a customer',
-    bullets: ['Show QR codes customers scan', 'Split a large bill past per-app caps', 'Track each payment as it comes in'],
+    bullets: [
+      'Show QR codes customers scan',
+      'Split a large bill past per-app caps',
+      'Keep your own record of each payment you mark',
+    ],
   },
 ];
 
@@ -69,7 +78,9 @@ export function ChooseRoleScreen() {
               {choice.bullets.map((line) => (
                 <View key={line} style={styles.bulletRow}>
                   <Text style={text('caption', colors.primary)}>•</Text>
-                  <Text style={[text('caption', colors.textSecondary), styles.bulletText]}>{line}</Text>
+                  <Text style={[text('caption', colors.textSecondary), styles.bulletText]}>
+                    {line}
+                  </Text>
                 </View>
               ))}
             </View>
@@ -86,7 +97,7 @@ export function ChooseRoleScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.background },
-  body: { paddingHorizontal: layout.screenPadding, paddingBottom: spacing.xxxl, gap: spacing.xl },
+  body: { ...contentColumn, paddingBottom: spacing.xxxl, gap: spacing.xl },
   selected: { borderWidth: 1.5, borderColor: colors.accent },
   head: { flexDirection: 'row', alignItems: 'center' },
   glyph: {
