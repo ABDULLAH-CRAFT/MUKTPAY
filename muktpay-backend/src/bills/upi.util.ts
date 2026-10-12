@@ -1,3 +1,6 @@
+
+import { randomInt } from 'crypto';
+
 /**
  * Turns a bill chunk into the `upi://pay?…` string encoded into its QR code.
  *
@@ -6,6 +9,9 @@
  * used for that. The two must keep producing byte-identical output for the same input — if one
  * changes, change the other and its tests too.
  */
+
+/** A float in [0, 1) from the OS random source (the existing tests still inject their own). */
+const secureRandom = (): number => randomInt(0, 0x100000000) / 0x100000000;
 
 const enc = encodeURIComponent;
 /** `@` is legal and conventional in a VPA; some apps handle a literal @ better than %40. */
@@ -29,7 +35,7 @@ const REF_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1 — these
  * A short, uppercase, alphanumeric reference for the whole bill.
  * Time-ordered prefix so two bills made seconds apart can't collide, plus a random suffix.
  */
-export function makeBillRef(now: Date = new Date(), random: () => number = Math.random): string {
+export function makeBillRef(now: Date = new Date(), random: () => number = secureRandom): string {
   const stamp = now.getTime().toString(36).toUpperCase().slice(-6);
   let suffix = '';
   for (let i = 0; i < 2; i++) suffix += REF_ALPHABET[Math.floor(random() * REF_ALPHABET.length)];
@@ -54,11 +60,17 @@ export interface MerchantUpiParams {
  * P2P collect link, which is exactly why real payment confirmation still needs an aggregator.
  */
 export function buildMerchantUpiUrl({ vpa, shopName, amountPaise, note }: MerchantUpiParams): string {
-  const parts = [`pa=${encVpa(vpa)}`, `pn=${enc(sanitize(shopName, 50))}`, `am=${paiseToUpiAmount(amountPaise)}`, 'cu=INR'];
+  const parts = [
+    `pa=${encVpa(vpa)}`,
+    `pn=${enc(sanitize(shopName, 50))}`,
+    `am=${paiseToUpiAmount(amountPaise)}`,
+    'cu=INR',
+  ];
   const cleanNote = sanitize(note, 40);
   if (cleanNote) parts.push(`tn=${enc(cleanNote)}`);
   return `upi://pay?${parts.join('&')}`;
 }
 
 /** The note each chunk carries: "MP7X2K9A 2/3". Same ref on every chunk, different position. */
-export const chunkNote = (ref: string, index: number, count: number): string => `${ref} ${index}/${count}`;
+export const chunkNote = (ref: string, index: number, count: number): string =>
+  `${ref} ${index}/${count}`;

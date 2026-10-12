@@ -1,6 +1,13 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
+import type { MerchantProfile } from '../merchant/merchant-profile.entity';
 import { MerchantService } from '../merchant/merchant.service';
 import { SplitService } from '../split/split.service';
 import { BillChunk, type ChunkStatus } from './bill-chunk.entity';
@@ -16,6 +23,12 @@ export const BILL_EXPIRY_HOURS = 24;
 /** Shape of an accepted Idempotency-Key: 8-64 characters, so a UUID (with dashes) fits. */
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9_-]{8,64}$/;
 const IDEMPOTENCY_INDEX = 'uq_bills_merchant_idempotency_key';
+const REF_INDEX = 'uq_bills_ref';
+/** A reference collision is astronomically unlikely; this is the safety net, not the plan. */
+const MAX_REF_ATTEMPTS = 5;
+
+type SplitPlan = ReturnType<SplitService['plan']>;
+type SplitRules = ReturnType<SplitService['rulesFor']>;
 
 interface EventSpec {
   type: BillEventType;
@@ -85,57 +98,25 @@ export class BillService {
     }
 
     const profile = await this.merchant.getOrThrow(merchantId);
-    const ref = await this.uniqueRef();
 
-    try {
-      // One transaction: a bill never exists without its payments and its "created" event.
-      return await this.dataSource.transaction(async (manager) => {
-        const bill = await manager.save(
-          manager.create(Bill, {
-            merchantId,
-            ref,
-            shopName: profile.shopName,
-            vpa: profile.vpa,
-            totalPaise: plan.totalPaise,
-            capPaise: rules.maxTranchePaise,
-            strategy: plan.strategy,
-            status: 'open',
-            expiresAt: new Date(Date.now() + BILL_EXPIRY_HOURS * 3_600_000),
-            cancelledAt: null,
-            note,
-            idempotencyKey: idempotencyKey ?? null,
-          }),
-        );
+    // No "check then insert" (two requests could both pass the check). Insert, and if the
+    // database says another bill already owns this reference, draw a new one and try again.
+    for (let attempt = 1; attempt <= MAX_REF_ATTEMPTS; attempt++) {
+      try {
+        return await this.insertBill(merchantId, profile, makeBillRef(), plan, rules, note, idempotencyKey);
+      } catch (error) {
+        if (this.isUniqueViolation(error, REF_INDEX)) continue;
 
-        bill.chunks = await manager.save(
-          plan.tranches.map((tranche) =>
-            manager.create(BillChunk, {
-              billId: bill.id,
-              index: tranche.index,
-              amountPaise: tranche.amountPaise,
-              status: 'pending',
-              upiUrl: buildMerchantUpiUrl({
-                vpa: profile.vpa,
-                shopName: profile.shopName,
-                amountPaise: tranche.amountPaise,
-                note: chunkNote(ref, tranche.index, plan.trancheCount),
-              }),
-            }),
-          ),
-        );
-
-        await this.record(manager, bill.id, merchantId, [{ type: 'bill_created', amountPaise: bill.totalPaise }]);
-        return bill;
-      });
-    } catch (error) {
-      // Two requests with the same key arrived at the same moment. The database's unique index let
-      // exactly one through; the loser lands here and returns the winner's bill.
-      if (idempotencyKey && this.isIdempotencyConflict(error)) {
-        const replay = await this.findReplay(merchantId, idempotencyKey, expected);
-        if (replay) return replay;
+        // Two requests with the same key arrived at the same moment. The database's unique index let
+        // exactly one through; the loser lands here and returns the winner's bill.
+        if (idempotencyKey && this.isUniqueViolation(error, IDEMPOTENCY_INDEX)) {
+          const replay = await this.findReplay(merchantId, idempotencyKey, expected);
+          if (replay) return replay;
+        }
+        throw error;
       }
-      throw error;
     }
+    throw new ServiceUnavailableException('Could not generate a bill reference. Please try again.');
   }
 
   async list(merchantId: string, query: ListBillsQueryDto): Promise<{ items: Bill[]; nextCursor: string | null }> {
@@ -153,6 +134,21 @@ export class BillService {
     if (query.search) {
       const term = `%${query.search.trim()}%`;
       qb.andWhere('(bill.ref ILIKE :term OR bill.note ILIKE :term)', { term });
+    }
+
+    // Keyset pagination: continue strictly AFTER the bill the previous page ended on, in the same
+    // (created_at DESC, id DESC) order used below. The database compares the cursor bill's own
+    // timestamp, so no precision is lost on the way through JavaScript.
+    if (query.cursor) {
+      const known = await this.bills.count({ where: { id: query.cursor, merchantId } });
+      if (!known) throw new BadRequestException('Invalid cursor');
+      qb.andWhere(
+        `(bill.created_at, bill.id) < (
+           SELECT cursor_bill.created_at, cursor_bill.id FROM bills cursor_bill
+           WHERE cursor_bill.id = :cursor AND cursor_bill.merchant_id = :merchantId
+         )`,
+        { cursor: query.cursor },
+      );
     }
 
     // Fetch one extra row: if it exists there's another page, and we don't return it.
@@ -227,22 +223,35 @@ export class BillService {
     return this.billEvents.find({ where: { billId: bill.id }, order: { createdAt: 'DESC' }, take: 100 });
   }
 
+  /**
+   * Marks one payment paid / pending and keeps the bill's status in step.
+   *
+   * The whole read-decide-write runs in ONE transaction that first locks the bill row. Every
+   * status change on a bill goes through that lock, so two simultaneous updates take turns, and
+   * the second one re-reads the chunks AFTER the first has committed. Without the lock, both
+   * could compute "everything else is paid" from stale data and settle a bill that still has a
+   * pending payment.
+   */
   async setChunkStatus(merchantId: string, ref: string, index: number, status: ChunkStatus): Promise<Bill> {
-    const bill = await this.findOwnedByRef(merchantId, ref);
-    if (bill.status === 'cancelled') throw new ConflictException('This bill was cancelled.');
-
-    const chunk = bill.chunks.find((c) => c.index === index);
-    if (!chunk) throw new NotFoundException('Payment not found on this bill');
-
-    // Already in that state: nothing changed, so nothing is written or recorded. This also stops
-    // a double-tap from overwriting the original paid_at timestamp.
-    if (chunk.status === status) return bill;
-
-    const settled = bill.chunks.every((c) => (c.index === index ? status === 'paid' : c.status === 'paid'));
-    const nextStatus: BillStatus = settled ? 'settled' : 'open';
+    await this.expireStale(merchantId);
 
     await this.dataSource.transaction(async (manager) => {
+      const bill = await this.lockOwnedBill(manager, merchantId, ref);
+      if (bill.status === 'cancelled') throw new ConflictException('This bill was cancelled.');
+
+      // Fresh chunks, read while holding the lock.
+      const chunks = await manager.find(BillChunk, { where: { billId: bill.id }, order: { index: 'ASC' } });
+      const chunk = chunks.find((c) => c.index === index);
+      if (!chunk) throw new NotFoundException('Payment not found on this bill');
+
+      // Already in that state: nothing changed, so nothing is written or recorded. This also stops
+      // a double-tap from overwriting the original paid_at timestamp.
+      if (chunk.status === status) return;
+
       await manager.update(BillChunk, chunk.id, { status, paidAt: status === 'paid' ? new Date() : null });
+
+      const settled = chunks.every((c) => (c.index === index ? status === 'paid' : c.status === 'paid'));
+      const nextStatus: BillStatus = settled ? 'settled' : 'open';
 
       const events: EventSpec[] = [
         {
@@ -264,21 +273,90 @@ export class BillService {
   /**
    * Calls a bill off. Only allowed while nothing is marked as received: cancelling must never be
    * a way to make money that already arrived disappear from the record. Idempotent.
+   * Runs under the same bill lock as setChunkStatus, so a payment being marked at this very
+   * moment can't slip past the "nothing paid yet" check.
    */
   async cancel(merchantId: string, ref: string): Promise<Bill> {
-    const bill = await this.findOwnedByRef(merchantId, ref);
-    if (bill.status === 'cancelled') return bill;
-      throw new ConflictException('Some payments are already marked as paid. Undo them first, or leave the bill open.');
-    if (bill.chunks.some((c) => c.status === 'paid')) {
-      throw new ConflictException('Some payments are already marked as received. Undo them first, or leave the bill open.');
-    }
+    await this.expireStale(merchantId);
 
     await this.dataSource.transaction(async (manager) => {
+      const bill = await this.lockOwnedBill(manager, merchantId, ref);
+      if (bill.status === 'cancelled') return;
+
+      const paid = await manager.count(BillChunk, { where: { billId: bill.id, status: 'paid' } });
+      if (paid > 0) {
+        throw new ConflictException('Some payments are already marked as received. Undo them first, or leave the bill open.');
+      }
+
       await manager.update(Bill, bill.id, { status: 'cancelled', cancelledAt: new Date() });
       await this.record(manager, bill.id, merchantId, [{ type: 'bill_cancelled' }]);
     });
 
     return this.findOwnedByRef(merchantId, ref);
+  }
+
+  /** One transaction: a bill never exists without its payments and its "created" event. */
+  private insertBill(
+    merchantId: string,
+    profile: MerchantProfile,
+    ref: string,
+    plan: SplitPlan,
+    rules: SplitRules,
+    note: string | null,
+    idempotencyKey?: string,
+  ): Promise<Bill> {
+    return this.dataSource.transaction(async (manager) => {
+      const bill = await manager.save(
+        manager.create(Bill, {
+          merchantId,
+          ref,
+          shopName: profile.shopName,
+          vpa: profile.vpa,
+          totalPaise: plan.totalPaise,
+          capPaise: rules.maxTranchePaise,
+          strategy: plan.strategy,
+          status: 'open',
+          expiresAt: new Date(Date.now() + BILL_EXPIRY_HOURS * 3_600_000),
+          cancelledAt: null,
+          note,
+          idempotencyKey: idempotencyKey ?? null,
+        }),
+      );
+
+      bill.chunks = await manager.save(
+        plan.tranches.map((tranche) =>
+          manager.create(BillChunk, {
+            billId: bill.id,
+            index: tranche.index,
+            amountPaise: tranche.amountPaise,
+            status: 'pending',
+            upiUrl: buildMerchantUpiUrl({
+              vpa: profile.vpa,
+              shopName: profile.shopName,
+              amountPaise: tranche.amountPaise,
+              note: chunkNote(ref, tranche.index, plan.trancheCount),
+            }),
+          }),
+        ),
+      );
+
+      await this.record(manager, bill.id, merchantId, [{ type: 'bill_created', amountPaise: bill.totalPaise }]);
+      return bill;
+    });
+  }
+
+  /**
+   * Loads the merchant's own bill and locks its row until the transaction ends (SELECT … FOR UPDATE).
+   * No relations on purpose: PostgreSQL can't lock the nullable side of an outer join.
+   * Another merchant's bill is a 404, never a 403.
+   */
+  private async lockOwnedBill(manager: EntityManager, merchantId: string, ref: string): Promise<Bill> {
+    const bill = await manager.findOne(Bill, {
+      where: { ref: ref.toUpperCase(), merchantId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!bill) throw new NotFoundException('Bill not found');
+    return bill;
   }
 
   /**
@@ -305,9 +383,11 @@ export class BillService {
     return existing;
   }
 
-  private isIdempotencyConflict(error: unknown): boolean {
-    const e = error as { code?: string; constraint?: string; driverError?: { constraint?: string } };
-    return e?.code === '23505' && (e.driverError?.constraint ?? e.constraint) === IDEMPOTENCY_INDEX;
+  /** PostgreSQL unique violation (23505) on one specific index. */
+  private isUniqueViolation(error: unknown, constraint: string): boolean {
+    const e = error as { code?: string; constraint?: string; driverError?: { code?: string; constraint?: string } };
+    const code = e?.driverError?.code ?? e?.code;
+    return code === '23505' && (e.driverError?.constraint ?? e.constraint) === constraint;
   }
 
   /** Appends events for one bill. Events from a single transaction would all share Postgres'
@@ -346,15 +426,5 @@ export class BillService {
        SELECT id, NULL, 'bill_expired' FROM expired`,
       [merchantId],
     );
-  }
-
-  /** Collisions are astronomically unlikely (6-char timestamp + 2 random chars) but never assumed. */
-  private async uniqueRef(): Promise<string> {
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const ref = makeBillRef();
-      const count = await this.bills.count({ where: { ref } });
-      if (count === 0) return ref;
-    }
-    throw new BadRequestException('Could not generate a bill reference, please try again.');
   }
 }

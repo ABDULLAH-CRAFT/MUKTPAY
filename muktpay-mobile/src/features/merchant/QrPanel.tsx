@@ -39,6 +39,11 @@ export function QrPanel({ shopName, vpa, amountPaise, partLabel, reference, upiU
   const posterRef = useRef<View>(null);
   const [busy, setBusy] = useState<Busy>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+
+  // Keyed by URL so a failure for one payment link never sticks to the next one.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const qrFailed = failedUrl === upiUrl;
+
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -74,7 +79,7 @@ export function QrPanel({ shopName, vpa, amountPaise, partLabel, reference, upiU
   };
 
   const shareQr = async () => {
-    if (busy) return;
+    if (busy || qrFailed) return;
     setBusy('share');
     try {
       if (!(await Sharing.isAvailableAsync())) {
@@ -82,7 +87,11 @@ export function QrPanel({ shopName, vpa, amountPaise, partLabel, reference, upiU
         return;
       }
       const uri = await capturePoster();
-      await Sharing.shareAsync(uri, { mimeType: 'image/png', UTI: 'public.png', dialogTitle: 'Share payment QR' });
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        UTI: 'public.png',
+        dialogTitle: 'Share payment QR',
+      });
     } catch {
       show('error', "Couldn't share the QR. Please try again.");
     } finally {
@@ -91,7 +100,7 @@ export function QrPanel({ shopName, vpa, amountPaise, partLabel, reference, upiU
   };
 
   const downloadQr = async () => {
-    if (busy) return;
+    if (busy || qrFailed) return;
     setBusy('download');
     try {
       const permission = await MediaLibrary.requestPermissionsAsync(true); // write-only access
@@ -119,7 +128,9 @@ export function QrPanel({ shopName, vpa, amountPaise, partLabel, reference, upiU
         show('error', "This QR can't be opened in a UPI app. Ask the customer to scan it instead.");
         return;
       }
-      const outcome = await launchUpiPayment(parsed.value, { amountPaise: parsed.value.amountPaise });
+      const outcome = await launchUpiPayment(parsed.value, {
+        amountPaise: parsed.value.amountPaise,
+      });
       if (!outcome.ok) show('error', outcome.message);
     } catch {
       show('error', "We couldn't open your UPI app. Ask the customer to scan the QR code with their UPI app.");
@@ -136,17 +147,27 @@ export function QrPanel({ shopName, vpa, amountPaise, partLabel, reference, upiU
           <Text style={[text('h3'), styles.centered]} numberOfLines={2}>
             {shopName}
           </Text>
-          <Text style={[text('caption', colors.textSecondary), styles.centered]}>{partLabel}</Text>
+          <Text style={[text('caption', colors.textSecondary), styles.centered]}>
+            {partLabel}
+          </Text>
           <AmountDisplay amountPaise={amountPaise} size="xl" tone="primary" />
-          <UpiQrCode value={upiUrl} size={qrSize} bare />
+          <UpiQrCode
+            value={upiUrl}
+            size={qrSize}
+            bare
+            onError={() => setFailedUrl(upiUrl)}
+          />
           <Text style={[text('label'), styles.centered]}>Scan with any UPI app</Text>
-          <Text style={[text('micro', colors.textSecondary), styles.centered]}>Ref {reference}</Text>
+          <Text style={[text('micro', colors.textSecondary), styles.centered]}>
+            Ref {reference}
+          </Text>
         </View>
       </View>
 
       <Text style={[text('caption', colors.textSecondary), styles.centered]}>
-        Ask the customer to scan this in any UPI app and complete the payment there. If scanning doesn&apos;t work,
-        they can enter your UPI ID in their UPI app. Mark it as paid only once you see the money in your account.
+        Ask the customer to scan this in any UPI app and complete the payment there. If scanning
+        doesn&apos;t work, they can enter your UPI ID in their UPI app. Mark it as paid only once
+        you see the money in your account.
       </Text>
 
       {children}
@@ -171,7 +192,7 @@ export function QrPanel({ shopName, vpa, amountPaise, partLabel, reference, upiU
               variant="secondary"
               size="md"
               loading={busy === 'download'}
-              disabled={busy !== null && busy !== 'download'}
+              disabled={qrFailed || (busy !== null && busy !== 'download')}
               onPress={() => void downloadQr()}
             />
           </View>
@@ -181,7 +202,7 @@ export function QrPanel({ shopName, vpa, amountPaise, partLabel, reference, upiU
               variant="secondary"
               size="md"
               loading={busy === 'share'}
-              disabled={busy !== null && busy !== 'share'}
+              disabled={qrFailed || (busy !== null && busy !== 'share')}
               onPress={() => void shareQr()}
             />
           </View>
@@ -209,7 +230,10 @@ export function QrPanel({ shopName, vpa, amountPaise, partLabel, reference, upiU
         {feedback ? (
           <Text
             accessibilityLiveRegion="polite"
-            style={[text('label', feedback.tone === 'ok' ? colors.success : colors.danger), styles.centered]}
+            style={[
+              text('label', feedback.tone === 'ok' ? colors.success : colors.danger),
+              styles.centered,
+            ]}
           >
             {feedback.message}
           </Text>
@@ -221,7 +245,11 @@ export function QrPanel({ shopName, vpa, amountPaise, partLabel, reference, upiU
 
 const styles = StyleSheet.create({
   root: { alignSelf: 'stretch', alignItems: 'center', gap: spacing.lg },
-  posterShadow: { alignSelf: 'center', borderRadius: radius.lg, backgroundColor: colors.white },
+  posterShadow: {
+    alignSelf: 'center',
+    borderRadius: radius.lg,
+    backgroundColor: colors.white,
+  },
   poster: {
     alignItems: 'center',
     gap: spacing.md,

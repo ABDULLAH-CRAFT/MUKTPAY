@@ -4,12 +4,16 @@ import axios from 'axios';
 import { api } from '@/lib/api';
 import type { MerchantProfile, UpsertMerchantProfileInput } from '@/types/merchant';
 
-type MerchantStatus = 'loading' | 'ready';
+/** error = we could NOT find out whether a shop exists (network/server). Not the same as "no shop". */
+type MerchantStatus = 'loading' | 'error' | 'ready';
 
 interface MerchantContextValue {
   status: MerchantStatus;
   /** null = this merchant hasn't set up their shop yet, so the app shows onboarding. */
   profile: MerchantProfile | null;
+  /** Re-fetches the profile after a failed load. */
+  reload: () => void;
+  reloading: boolean;
   saveProfile: (input: UpsertMerchantProfileInput) => Promise<void>;
   clearProfile: () => Promise<void>;
 }
@@ -38,7 +42,13 @@ async function fetchProfile(): Promise<MerchantProfile | null> {
  */
 export function MerchantProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const { data: profile, isLoading } = useQuery({ queryKey: PROFILE_QUERY_KEY, queryFn: fetchProfile });
+  const {
+    data: profile,
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useQuery({ queryKey: PROFILE_QUERY_KEY, queryFn: fetchProfile });
 
   const saveMutation = useMutation({
     mutationFn: (input: UpsertMerchantProfileInput) => api.put<MerchantProfile>('/merchant/profile', input).then((r) => r.data),
@@ -61,9 +71,22 @@ export function MerchantProvider({ children }: { children: ReactNode }) {
     await clearMutation.mutateAsync();
   }, [clearMutation]);
 
+  const reload = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
   const value = useMemo<MerchantContextValue>(
-    () => ({ status: isLoading ? 'loading' : 'ready', profile: profile ?? null, saveProfile, clearProfile }),
-    [isLoading, profile, saveProfile, clearProfile],
+    () => ({
+      // A failed background refresh keeps showing the cached profile; only a first load that
+      // failed is an error.
+      status: isLoading ? 'loading' : isError && profile === undefined ? 'error' : 'ready',
+      profile: profile ?? null,
+      reload,
+      reloading: isFetching,
+      saveProfile,
+      clearProfile,
+    }),
+    [isLoading, isError, isFetching, profile, reload, saveProfile, clearProfile],
   );
 
   return <MerchantContext.Provider value={value}>{children}</MerchantContext.Provider>;

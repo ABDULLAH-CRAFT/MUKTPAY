@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -47,7 +48,7 @@ export function MerchantHome() {
   const router = useRouter();
   const { logout } = useAuth();
   const { resetRole } = useRole();
-  const { status, profile } = useMerchant();
+  const { status, profile, reload, reloading } = useMerchant();
   const { data: openBill, refetch: refetchOpenBill } = useLatestOpenBill();
   const {
     data: today,
@@ -61,6 +62,22 @@ export function MerchantHome() {
     return (
       <View style={styles.page}>
         <ScreenLoading />
+      </View>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <View style={styles.page}>
+        <MuktHeader title="MuktPay" />
+        <View style={contentColumn}>
+          <ErrorState
+            title="Couldn't load your shop"
+            message="Check your connection and try again."
+            onRetry={reload}
+            retrying={reloading}
+          />
+        </View>
       </View>
     );
   }
@@ -117,7 +134,9 @@ export function MerchantHome() {
             <View style={styles.mt}>
               <ProgressBar fraction={openBillTotal ? openBillPaidCount / openBillTotal : 0} />
             </View>
-            <Text style={[text('caption', colors.textSecondary), styles.mtXs]}>Ref {openBill.ref}</Text>
+            <Text style={[text('caption', colors.textSecondary), styles.mtXs]}>
+              Ref {openBill.ref}
+            </Text>
           </MuktCard>
         ) : null}
 
@@ -147,7 +166,10 @@ export function MerchantHome() {
             retrying={todayFetching}
           />
         ) : (
-          <MuktCard onPress={() => router.push('/merchant/history')} accessibilityLabel="See today's bill history">
+          <MuktCard
+            onPress={() => router.push('/merchant/history')}
+            accessibilityLabel="See today's bill history"
+          >
             <Text style={text('label', colors.textSecondary)}>MARKED AS PAID TODAY</Text>
             <AmountDisplay amountPaise={collectedToday} size="xl" tone="success" />
             {invoicedToday > 0 ? (
@@ -158,12 +180,14 @@ export function MerchantHome() {
                 </Text>
               </View>
             ) : (
-              <Text style={[text('caption', colors.textSecondary), styles.mt]}>No bills yet today.</Text>
+              <Text style={[text('caption', colors.textSecondary), styles.mt]}>
+                No bills yet today.
+              </Text>
             )}
             {today && today.billsCreated > 0 ? (
               <Text style={[text('caption', colors.textSecondary), styles.mtXs]}>
-                {today.billsCreated} bill{today.billsCreated === 1 ? '' : 's'} today · {today.settledCount} fully marked
-                paid
+                {today.billsCreated} bill{today.billsCreated === 1 ? '' : 's'} today ·{' '}
+                {today.settledCount} fully marked paid
               </Text>
             ) : null}
           </MuktCard>
@@ -183,7 +207,10 @@ export function MerchantHome() {
             {profile.vpa}
           </Text>
           <View style={styles.editRow}>
-            <Text style={[text('caption', colors.textSecondary), styles.flex]} numberOfLines={1}>
+            <Text
+              style={[text('caption', colors.textSecondary), styles.flex]}
+              numberOfLines={1}
+            >
               {profile.issuerLabel ?? 'Handle not recognised'}
             </Text>
             <Pressable
@@ -198,7 +225,11 @@ export function MerchantHome() {
           </View>
         </MuktCard>
 
-        <AccountCard switchLabel="Switch to paying" onSwitch={() => void resetRole()} onLogout={logout} />
+        <AccountCard
+          switchLabel="Switch to paying"
+          onSwitch={() => void resetRole()}
+          onLogout={logout}
+        />
       </ScrollView>
     </View>
   );
@@ -208,12 +239,27 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
   content: { ...contentColumn, paddingBottom: spacing.xxxl, gap: spacing.lg },
-  cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  cardHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
   mt: { marginTop: spacing.sm },
   mtXs: { marginTop: spacing.xs },
   heroProgress: { marginTop: spacing.md },
-  progressRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.md },
-  trackOuter: { height: 8, borderRadius: radius.pill, backgroundColor: colors.accentSoft, overflow: 'hidden' },
+  progressRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  trackOuter: {
+    height: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentSoft,
+    overflow: 'hidden',
+  },
   trackFill: { height: '100%', borderRadius: radius.pill },
   actionRow: { flexDirection: 'row', gap: spacing.md },
   actionButton: { flex: 1 },
@@ -223,6 +269,17 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: colors.warningSoft,
   },
-  editRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm, gap: spacing.md },
-  editButton: { minHeight: 44, minWidth: 44, alignItems: 'flex-end', justifyContent: 'center' },
+  editRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+    gap: spacing.md,
+  },
+  editButton: {
+    minHeight: 44,
+    minWidth: 44,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
 });

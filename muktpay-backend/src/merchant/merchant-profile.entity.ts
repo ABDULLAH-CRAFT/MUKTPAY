@@ -1,5 +1,7 @@
+
 import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { User } from '../users/user.entity';
+import { VPA_MAX_LENGTH } from '../common/limits';
 
 /**
  * The merchant's own shop details — one row per merchant account.
@@ -26,7 +28,7 @@ export class MerchantProfile {
   shopName!: string;
 
   /** Lowercase UPI ID, e.g. "guptakirana@okhdfcbank". */
-  @Column({ type: 'varchar', length: 100 })
+  @Column({ type: 'varchar', length: VPA_MAX_LENGTH })
   vpa!: string;
 
   /**

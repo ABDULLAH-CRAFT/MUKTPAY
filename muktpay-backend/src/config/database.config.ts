@@ -1,3 +1,4 @@
+
 import { join } from 'path';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
@@ -18,9 +19,26 @@ export const typeOrmConfig = (config: ConfigService): TypeOrmModuleOptions => ({
   autoLoadEntities: true, // entities register via TypeOrmModule.forFeature()
   synchronize: false,
   namingStrategy: new SnakeNamingStrategy(),
+
   // uuid defaults use gen_random_uuid() (built into PostgreSQL 13+), no uuid-ossp needed.
   uuidExtension: 'pgcrypto',
+
   // Compiled .js only: `nest start` / `node dist/main` run from /dist.
   migrations: [join(__dirname, '..', 'migrations', '*.js')],
   migrationsRun: config.get('DB_MIGRATIONS_RUN') !== 'false',
+
+  // Managed databases (RDS, Supabase, Neon, Render...) require TLS.
+  // Off by default for local Docker.
+  ssl:
+    config.get('DB_SSL') === 'true'
+      ? {
+          rejectUnauthorized:
+            config.get('DB_SSL_REJECT_UNAUTHORIZED') !== 'false',
+        }
+      : false,
+
+  // Fail fast if the database is unreachable instead of letting requests hang.
+  extra: {
+    connectionTimeoutMillis: 5_000,
+  },
 });

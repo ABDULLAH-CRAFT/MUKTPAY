@@ -1,29 +1,15 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios';
-import Constants from 'expo-constants';
+import { API_CONFIG } from './config';
 import { clearTokens, getAccessToken, getRefreshToken, setTokens } from './tokenStorage';
 import type { AuthResponse } from '@/types/auth';
 
-const BACKEND_PORT = 4000;
+export const API_BASE_URL = API_CONFIG.baseUrl;
 
-/**
- * A phone can't reach "localhost" on your computer. In development Expo Go already knows
- * your computer's LAN address (it's how the JS bundle loaded), so we reuse that host.
- */
-function resolveBaseUrl(): string {
-  const explicit = process.env.EXPO_PUBLIC_API_URL;
-  if (explicit) return explicit;
+const TIMEOUT_MS = 15_000;
 
-  const host = Constants.expoConfig?.hostUri?.split(':')[0];
-  if (host) return `http://${host}:${BACKEND_PORT}/api`;
-
-  return `http://localhost:${BACKEND_PORT}/api`; // iOS simulator / web fallback
-}
-
-export const API_BASE_URL = resolveBaseUrl();
-
-export const api = axios.create({ baseURL: API_BASE_URL, timeout: 10_000 });
+export const api = axios.create({ baseURL: API_BASE_URL, timeout: TIMEOUT_MS });
 // Interceptor-free client, used only to call /auth/refresh (avoids refresh loops).
-const bare = axios.create({ baseURL: API_BASE_URL, timeout: 10_000 });
+const bare = axios.create({ baseURL: API_BASE_URL, timeout: TIMEOUT_MS });
 
 // Called when the server definitively rejects our refresh token → AuthProvider shows login.
 let onSessionExpired: (() => void) | null = null;
@@ -35,6 +21,12 @@ export const setSessionExpiredHandler = (handler: (() => void) | null) => {
 // the same promise, because refresh tokens are single-use (a second call would look like theft).
 let refreshInFlight: Promise<string | null> | null = null;
 
+/**
+ * Resolves to a new access token, or null when there is no usable session
+ * (no refresh token, or the server answered 401 → session ended).
+ * REJECTS on network / 5xx / 429 errors: those are not an auth failure, so the
+ * session is kept and the caller sees the real (network/server) error.
+ */
 function refreshAccessToken(): Promise<string | null> {
   refreshInFlight ??= (async () => {
     const refreshToken = await getRefreshToken();
@@ -44,12 +36,12 @@ function refreshAccessToken(): Promise<string | null> {
       await setTokens(data.accessToken, data.refreshToken);
       return data.accessToken;
     } catch (error) {
-      // Only a definitive "no" ends the session. A network error must not log people out.
       if (axios.isAxiosError(error) && error.response?.status === 401) {
         await clearTokens();
         onSessionExpired?.();
+        return null;
       }
-      return null;
+      throw error;
     } finally {
       refreshInFlight = null;
     }
@@ -60,6 +52,7 @@ function refreshAccessToken(): Promise<string | null> {
 const AUTH_PATHS = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'];
 
 api.interceptors.request.use(async (config) => {
+  if (API_CONFIG.error) throw new Error(API_CONFIG.error); // never send requests from a misconfigured build
   const token = await getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
@@ -79,6 +72,8 @@ api.interceptors.response.use(
     // newer than the one this request was sent with: just retry with it, don't rotate again.
     const sentWith = String(original.headers.Authorization ?? '').replace('Bearer ', '');
     const current = await getAccessToken();
+    // A refresh that fails for network/server reasons throws HERE, so the caller sees a
+    // network error instead of a misleading 401.
     const newToken = current && current !== sentWith ? current : await refreshAccessToken();
     if (!newToken) throw error;
 

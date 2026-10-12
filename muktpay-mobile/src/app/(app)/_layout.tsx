@@ -2,7 +2,8 @@ import { Stack } from 'expo-router';
 import { MerchantProvider } from '@/features/merchant/MerchantProvider';
 import { RoleProvider } from '@/features/role/RoleProvider';
 import { colors } from '@/theme/theme';
-
+// Screen crashes inside the signed-in app show a friendly screen with "Try again".
+export { RouteErrorBoundary as ErrorBoundary } from '@/components/RouteErrorBoundary';
 /**
  * Everything in here is signed-in. Role and shop profile only mean something once we know who
  * the person is, so both providers are mounted here rather than at the root.

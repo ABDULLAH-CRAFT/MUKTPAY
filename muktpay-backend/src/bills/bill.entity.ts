@@ -2,6 +2,7 @@ import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, OneToMa
 import { User } from '../users/user.entity';
 import { BillChunk } from './bill-chunk.entity';
 import type { SplitStrategy } from '../split/interfaces/split.interfaces';
+import { VPA_MAX_LENGTH } from '../common/limits';
 
 /**
  * open      : being collected.
@@ -41,7 +42,7 @@ export class Bill {
   @Column({ type: 'varchar', length: 50 })
   shopName!: string;
 
-  @Column({ type: 'varchar', length: 100 })
+  @Column({ type: 'varchar', length: VPA_MAX_LENGTH })
   vpa!: string;
 
   @Column({ type: 'integer' })
@@ -64,10 +65,12 @@ export class Bill {
 
   @Column({ type: 'timestamptz', nullable: true })
   cancelledAt!: Date | null;
-    /** Optional free-text label, e.g. "Ramesh, order 12" — makes a bill findable by more than its ref. */
+
+  /** Optional free-text label, e.g. "Ramesh, order 12" — makes a bill findable by more than its ref. */
   @Column({ type: 'varchar', length: 60, nullable: true })
   note!: string | null;
-    /**
+
+  /**
    * Client-chosen key that makes creating this bill safe to retry. Unique per merchant; bills made
    * without one leave it null (Postgres treats nulls as distinct, so those never collide).
    * `select: false` keeps it out of API responses: it's plumbing, not part of the bill.

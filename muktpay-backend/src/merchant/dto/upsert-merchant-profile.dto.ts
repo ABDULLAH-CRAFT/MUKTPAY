@@ -1,4 +1,5 @@
 import { IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { VPA_MAX_LENGTH } from '../../common/limits';
 
 // Same shape muktpay-mobile/src/services/upi/upiValidator.ts checks a scanned VPA against — a
 // merchant's own UPI ID must be one the app would also accept from a QR code, not two definitions
@@ -10,7 +11,9 @@ export class UpsertMerchantProfileDto {
   @Length(2, 50)
   shopName!: string;
 
+  // MaxLength uses the SAME constant as the database column (see common/limits.ts).
   @IsString()
+  @MaxLength(VPA_MAX_LENGTH)
   @Matches(VPA, { message: 'Enter a valid UPI ID, like shop@ybl' })
   vpa!: string;
 
