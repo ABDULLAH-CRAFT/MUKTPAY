@@ -52,14 +52,6 @@
           "recordAudioAndroid": false
         }
       ],
-      [
-        "expo-media-library",
-        {
-          "photosPermission": "MuktPay does not read your photos.",
-          "savePhotosPermission": "MuktPay saves the payment QR image to your photos when you tap Download QR.",
-          "isAccessMediaLocationEnabled": false
-        }
-      ],
       "expo-sharing"
     ],
     "experiments": {

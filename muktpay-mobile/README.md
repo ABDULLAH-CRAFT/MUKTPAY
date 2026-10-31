@@ -1,56 +1,48 @@
-# Welcome to your Expo app 👋
+# MuktPay Mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Expo (SDK 57) + Expo Router app for MuktPay. Customers scan a shop's UPI QR code and pay in
+their own UPI app. Merchants create bills, split large amounts into several payments, and show
+a QR code per payment. MuktPay never holds or processes money.
 
-## Get started
+## Requirements
 
-1. Install dependencies
+- Node.js LTS and npm
+- The MuktPay backend running (see the repository root `README.md`)
+- A phone with Expo Go, or an Android emulator
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Run locally
 
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Scan the QR code with Expo Go. The phone and the computer must be on the same Wi-Fi.
+In development the app finds the backend at `http://<your-computer-LAN-IP>:4000/api`.
+To point it somewhere else, copy `.env.example` to `.env` and set `EXPO_PUBLIC_API_URL`.
 
-### Other setup steps
+## Scripts
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+| Command | What it does |
+|---|---|
+| `npm start` | Start the Expo dev server |
+| `npm run android` | Start and open on an Android device or emulator |
+| `npm test` | Run unit tests (UPI parser, money formatting, split engine) |
+| `npm run lint` | Lint the project |
 
-## Learn more
+## Configuration
 
-To learn more about developing your project with Expo, look at the following resources:
+| Variable | Required | Notes |
+|---|---|---|
+| `EXPO_PUBLIC_API_URL` | Release builds | `https://` URL ending in `/api`. Release builds refuse to start without a valid one. |
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Project layout
 
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```
+src/app/         Screens and routes (Expo Router)
+src/components/  Shared UI components
+src/features/    Auth, merchant, role, split and other feature code
+src/services/    UPI link building, parsing and launching
+src/lib/         API client, config, token storage
+src/theme/       Colours, spacing, typography
+```

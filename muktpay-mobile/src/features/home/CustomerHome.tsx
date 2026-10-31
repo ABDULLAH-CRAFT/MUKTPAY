@@ -35,10 +35,6 @@ export function CustomerHome() {
           </View>
         </MuktCard>
 
-        {__DEV__ ? (
-          <MuktButton title="Design system preview (dev only)" variant="ghost" onPress={() => router.push('/design')} />
-        ) : null}
-
         <AccountCard switchLabel="Switch to collecting" onSwitch={() => void resetRole()} onLogout={logout} />
       </ScrollView>
     </View>
