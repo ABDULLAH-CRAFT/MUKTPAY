@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import { captureRef } from 'react-native-view-shot';
 import { AmountDisplay, MuktButton, UpiQrCode } from '@/components';
@@ -24,15 +23,16 @@ interface QrPanelProps {
 }
 
 type Feedback = { tone: 'ok' | 'error'; message: string };
-type Busy = 'download' | 'share' | 'open' | null;
+type Busy = 'share' | 'open' | null;
 
 const MAX_POSTER_WIDTH = 340;
 const FEEDBACK_MS = 4000;
 
 /**
  * The merchant's QR screen block: a poster (shop, amount, QR, reference) plus the actions around
- * it. Download and Share capture the poster itself, so the saved/printed image is exactly what is
- * on screen: black code, white background, whitespace all round.
+ * it. Share captures the poster itself, so the saved/printed image is exactly what is on screen:
+ * black code, white background, whitespace all round. (Saving to the gallery goes through the system
+ * share sheet, so the app needs no photo-library permission.)
  */
 export function QrPanel({ shopName, vpa, amountPaise, partLabel, reference, upiUrl, children }: QrPanelProps) {
   const { width } = useWindowDimensions();
@@ -83,7 +83,7 @@ export function QrPanel({ shopName, vpa, amountPaise, partLabel, reference, upiU
     setBusy('share');
     try {
       if (!(await Sharing.isAvailableAsync())) {
-        show('error', "Sharing isn't available on this device. Try Download QR instead.");
+        show('error', "Sharing isn't available on this device. Use Copy link instead.");
         return;
       }
       const uri = await capturePoster();
@@ -94,25 +94,6 @@ export function QrPanel({ shopName, vpa, amountPaise, partLabel, reference, upiU
       });
     } catch {
       show('error', "Couldn't share the QR. Please try again.");
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const downloadQr = async () => {
-    if (busy || qrFailed) return;
-    setBusy('download');
-    try {
-      const permission = await MediaLibrary.requestPermissionsAsync(true); // write-only access
-      if (!permission.granted) {
-        show('error', 'Allow access to save the QR to your photos, or use Share QR instead.');
-        return;
-      }
-      const uri = await capturePoster();
-      await MediaLibrary.saveToLibraryAsync(uri);
-      show('ok', 'QR saved to your photos.');
-    } catch {
-      show('error', "Couldn't save the QR. Try Share QR instead.");
     } finally {
       setBusy(null);
     }
@@ -185,28 +166,14 @@ export function QrPanel({ shopName, vpa, amountPaise, partLabel, reference, upiU
           Use &quot;Open UPI App&quot; when the customer pays from this phone.
         </Text>
 
-        <View style={styles.row}>
-          <View style={styles.cell}>
-            <MuktButton
-              title="Download QR"
-              variant="secondary"
-              size="md"
-              loading={busy === 'download'}
-              disabled={qrFailed || (busy !== null && busy !== 'download')}
-              onPress={() => void downloadQr()}
-            />
-          </View>
-          <View style={styles.cell}>
-            <MuktButton
-              title="Share QR"
-              variant="secondary"
-              size="md"
-              loading={busy === 'share'}
-              disabled={qrFailed || (busy !== null && busy !== 'share')}
-              onPress={() => void shareQr()}
-            />
-          </View>
-        </View>
+        <MuktButton
+          title="Share or save QR"
+          variant="secondary"
+          size="md"
+          loading={busy === 'share'}
+          disabled={qrFailed || (busy !== null && busy !== 'share')}
+          onPress={() => void shareQr()}
+        />
 
         <View style={styles.row}>
           <View style={styles.cell}>
