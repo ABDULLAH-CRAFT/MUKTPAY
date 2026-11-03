@@ -1,11 +1,15 @@
-import { Logger } from '@nestjs/common';
+import { Logger, LogLevel } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { configureApp } from './app.setup';
 import { resolveHost, resolvePort } from './config/runtime.config';
 
+// Production keeps the logs useful: no debug/verbose noise.
+const LOG_LEVELS: LogLevel[] =
+  process.env.NODE_ENV === 'production' ? ['log', 'warn', 'error', 'fatal'] : ['log', 'warn', 'error', 'debug', 'verbose'];
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { logger: LOG_LEVELS });
   configureApp(app);
   app.enableShutdownHooks(); // finish in-flight requests and close the DB pool on SIGTERM
 

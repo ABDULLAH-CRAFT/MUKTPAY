@@ -7,6 +7,7 @@ export interface PublicUser {
   id: string;
   name: string;
   email: string;
+  emailVerified: boolean;
   createdAt: Date;
 }
 
@@ -14,6 +15,7 @@ export const toPublicUser = (user: User): PublicUser => ({
   id: user.id,
   name: user.name,
   email: user.email,
+  emailVerified: user.emailVerifiedAt != null,
   createdAt: user.createdAt,
 });
 
@@ -31,13 +33,17 @@ export class UsersService {
     return this.users.findOne({ where: { email: normalizeEmail(email) } });
   }
 
-  /** Only login needs the hash. */
+  /** Only login and account deletion need the hash. */
   findByEmailWithPassword(email: string) {
     return this.users
       .createQueryBuilder('user')
       .addSelect('user.passwordHash')
       .where('user.email = :email', { email: normalizeEmail(email) })
       .getOne();
+  }
+
+  findByIdWithPassword(id: string) {
+    return this.users.createQueryBuilder('user').addSelect('user.passwordHash').where('user.id = :id', { id }).getOne();
   }
 
   create(data: { name: string; email: string; passwordHash: string }) {
@@ -48,5 +54,18 @@ export class UsersService {
 
   async touchLastLogin(id: string) {
     await this.users.update({ id }, { lastLoginAt: new Date() });
+  }
+
+  async markEmailVerified(id: string) {
+    await this.users.update({ id }, { emailVerifiedAt: new Date() });
+  }
+
+  async updatePassword(id: string, passwordHash: string) {
+    await this.users.update({ id }, { passwordHash });
+  }
+
+  /** Foreign keys with ON DELETE CASCADE remove the shop profile, bills, sessions and codes with it. */
+  async deleteById(id: string) {
+    await this.users.delete({ id });
   }
 }

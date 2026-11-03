@@ -24,6 +24,10 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true })
   lastLoginAt!: Date | null;
 
+  /** Set when the person enters the code we emailed them. Null = not verified yet. */
+  @Column({ type: 'timestamptz', nullable: true })
+  emailVerifiedAt!: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 

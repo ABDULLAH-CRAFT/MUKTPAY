@@ -80,7 +80,17 @@ export default function LoginScreen() {
         }
       />
 
-      <MuktButton title="Log in" onPress={onSubmit} loading={mutation.isPending} style={{ marginTop: 8 }} />
+      <Pressable
+        accessibilityRole="link"
+        accessibilityLabel="Forgot password"
+        hitSlop={8}
+        onPress={() => router.push('/forgot-password')}
+        style={{ alignSelf: 'flex-end' }}
+      >
+        <Text style={text('label', colors.primary)}>Forgot password?</Text>
+      </Pressable>
+
+      <MuktButton title="Log in" onPress={onSubmit} loading={mutation.isPending} />
       <MuktButton title="Create an account" variant="ghost" onPress={() => router.push('/register')} />
     </AuthLayout>
   );

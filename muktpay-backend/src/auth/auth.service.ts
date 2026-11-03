@@ -18,7 +18,7 @@ export interface AuthResponse {
   refreshToken: string;
 }
 
-const BCRYPT_COST = 12;
+export const BCRYPT_COST = 12;
 // Compared against when the email is unknown, so "no such user" takes as long as "wrong
 // password" and login timing can't be used to discover which emails are registered.
 const DUMMY_HASH = bcrypt.hashSync('muktpay-timing-equaliser', BCRYPT_COST);

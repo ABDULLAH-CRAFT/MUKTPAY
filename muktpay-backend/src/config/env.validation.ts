@@ -25,14 +25,14 @@ export function validateEnv(env: Record<string, unknown>) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
 
-  for (const key of ['PORT', 'DB_PORT']) {
+  for (const key of ['PORT', 'DB_PORT', 'MAIL_PORT']) {
     const value = get(key);
     if (value && !(/^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= 65535)) {
       throw new Error(`${key} must be a port number between 1 and 65535`);
     }
   }
 
-  for (const key of ['DB_MIGRATIONS_RUN', 'DB_SSL', 'DB_SSL_REJECT_UNAUTHORIZED']) {
+  for (const key of ['DB_MIGRATIONS_RUN', 'DB_SSL', 'DB_SSL_REJECT_UNAUTHORIZED', 'MAIL_SECURE']) {
     const value = get(key);
     if (value && value !== 'true' && value !== 'false') throw new Error(`${key} must be "true" or "false"`);
   }
@@ -72,6 +72,17 @@ export function validateEnv(env: Record<string, unknown>) {
     if (origin === '*') throw new Error('CORS_ORIGINS must not contain "*" in production: list the exact web origins');
     if (LOCAL_ORIGIN.test(origin)) throw new Error(`CORS_ORIGINS contains a development origin (${origin}); remove it in production`);
     if (origin.toLowerCase().startsWith('http://')) throw new Error(`CORS_ORIGINS entry ${origin} must use https:// in production`);
+  }
+
+  // Password reset and email verification send real emails: without a mail server nobody gets a code.
+  if (!get('MAIL_HOST') || !get('MAIL_FROM')) {
+    throw new Error('MAIL_HOST and MAIL_FROM are required in production (verification and password reset codes are sent by email)');
+  }
+  if (/change-?me/i.test(get('MAIL_HOST')) || /change-?me/i.test(get('MAIL_FROM'))) {
+    throw new Error('MAIL_HOST / MAIL_FROM still contain a "change-me" placeholder: set your real SMTP host and sender address');
+  }
+  if (/mailtrap\.io$/i.test(get('MAIL_HOST')) && /sandbox/i.test(get('MAIL_HOST'))) {
+    throw new Error('MAIL_HOST is a Mailtrap sandbox, which never delivers email. Use a real SMTP provider in production');
   }
 
   if (get('TRUST_PROXY').toLowerCase() === 'true') {
