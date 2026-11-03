@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { colors, spacing, text } from '@/theme/theme';
 import { MuktCard } from './MuktCard';
 
@@ -10,8 +11,9 @@ interface AccountCardProps {
   onLogout: () => void | Promise<void>;
 }
 
-/** Switch side + log out, as full-width rows with proper touch targets. Shared by both home screens. */
+/** Switch side, account settings and log out, as full-width rows with proper touch targets. Shared by both home screens. */
 export function AccountCard({ switchLabel, onSwitch, onLogout }: AccountCardProps) {
+  const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
 
   const logOut = async () => {
@@ -27,6 +29,8 @@ export function AccountCard({ switchLabel, onSwitch, onLogout }: AccountCardProp
   return (
     <MuktCard variant="flat" padding="sm">
       <Row label={switchLabel} onPress={onSwitch} />
+      <View style={styles.divider} />
+      <Row label="Account & security" onPress={() => router.push('/account')} />
       <View style={styles.divider} />
       <Row
         label={loggingOut ? 'Logging out…' : 'Log out'}

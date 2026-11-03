@@ -1,6 +1,7 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Logger, Post, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
+import { AccountService } from './account.service';
 import type { AuthUser, RequestMeta } from './auth.types';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -19,13 +20,26 @@ const STRICT = { default: { limit: 5, ttl: 60_000 } };
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  private readonly logger = new Logger(AuthController.name);
+
+  constructor(
+    private readonly auth: AuthService,
+    private readonly account: AccountService,
+  ) {}
 
   @Public()
   @Throttle(STRICT)
   @Post('register')
-  register(@Body() dto: RegisterDto, @Req() req: Request) {
-    return this.auth.register(dto, metaFrom(req));
+  async register(@Body() dto: RegisterDto, @Req() req: Request) {
+    const result = await this.auth.register(dto, metaFrom(req));
+
+    // Best effort and not awaited: the account exists either way, and the person can ask for
+    // another code from the Account screen.
+    void this.account.sendVerification(result.user.id).catch((error: unknown) => {
+      this.logger.warn(`Verification email failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+
+    return result;
   }
 
   @Public()

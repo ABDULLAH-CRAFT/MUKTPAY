@@ -1,12 +1,12 @@
 # MuktPay Mobile
 
-Expo (SDK 57) + Expo Router app for MuktPay. Customers scan a shop's UPI QR code and pay in
+Expo (SDK 58) + Expo Router app for MuktPay. Customers scan a shop's UPI QR code and pay in
 their own UPI app. Merchants create bills, split large amounts into several payments, and show
 a QR code per payment. MuktPay never holds or processes money.
 
 ## Requirements
 
-- Node.js LTS and npm
+- Node.js 22.13 or newer, and npm
 - The MuktPay backend running (see the repository root `README.md`)
 - A phone with Expo Go, or an Android emulator
 

@@ -9,7 +9,10 @@ import {
   type ReactNode,
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { clearBills } from '@/features/merchant/billStorage';
+import { clearMerchantProfile } from '@/features/merchant/merchantStorage';
 import { useNetwork } from '@/features/network/NetworkProvider';
+import { clearStoredRole } from '@/features/role/roleStorage';
 import { api, setSessionExpiredHandler } from '@/lib/api';
 import { classifyError } from '@/lib/errorKind';
 import { clearTokens, getRefreshToken, setTokens } from '@/lib/tokenStorage';
@@ -27,6 +30,10 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Re-reads the signed-in user from the server (e.g. after verifying the email). */
+  refreshUser: () => Promise<void>;
+  /** Permanently deletes the account on the server, then wipes this device's data and signs out. */
+  deleteAccount: (password: string) => Promise<void>;
   /** Re-checks the saved session (the "Try again" button on the unavailable screen). */
   retryStartup: () => Promise<void>;
 }
@@ -125,9 +132,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     endSession();
   }, [endSession]);
 
+  const refreshUser = useCallback(async () => {
+    const { data } = await api.get<User>('/users/me');
+    if (mounted.current) setUser(data);
+  }, []);
+
+  const userId = user?.id ?? null;
+  const deleteAccount = useCallback(
+    async (password: string) => {
+      // Throws on a wrong password or a network problem: nothing is wiped in that case.
+      await api.post('/auth/delete-account', { password });
+
+      // The server has deleted everything. Now remove what this phone kept for that user.
+      if (userId) await Promise.all([clearStoredRole(userId), clearMerchantProfile(userId), clearBills(userId)]);
+      await clearTokens();
+      endSession();
+    },
+    [userId, endSession],
+  );
+
   const value = useMemo(
-    () => ({ status, user, login, register, logout, retryStartup: bootstrap }),
-    [status, user, login, register, logout, bootstrap],
+    () => ({ status, user, login, register, logout, refreshUser, deleteAccount, retryStartup: bootstrap }),
+    [status, user, login, register, logout, refreshUser, deleteAccount, bootstrap],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
